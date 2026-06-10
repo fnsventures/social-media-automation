@@ -7,7 +7,10 @@
     "publish": "node scripts/publish.js",
     "publish:dry-run": "DRY_RUN=true node scripts/publish.js",
     "generate": "node scripts/generate-content.js",
-    "verify": "node scripts/verify-credentials.js"
+    "verify": "node scripts/verify-credentials.js",
+    "setup:meta": "node scripts/setup-meta-oauth.js",
+    "setup:twitter": "node scripts/setup-twitter-oauth.js",
+    "setup:youtube": "node scripts/setup-youtube-oauth.js"
   },
   "engines": {
     "node": ">=20"
