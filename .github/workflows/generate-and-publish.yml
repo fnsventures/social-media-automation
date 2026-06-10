@@ -48,8 +48,10 @@ jobs:
 
       - name: Generate AI content
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          GENERATION_PROVIDER: ${{ vars.GENERATION_PROVIDER || 'local' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_TEXT_MODEL: ${{ vars.GEMINI_TEXT_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image' }}
         run: node scripts/generate-content.js "${{ inputs.topic }}"
 
       - name: Attach media and set platforms on latest post

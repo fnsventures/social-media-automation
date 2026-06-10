@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 import { slugify } from "./lib/brand.js";
 import { saveGeneratedPost } from "./lib/content.js";
-import { generatePostCopy, generateImage } from "./lib/openai.js";
-import { createVideoFromImage, downloadImage } from "./lib/media-generate.js";
+import {
+  describeProvider,
+  generateAndSaveImage,
+  generatePostCopy,
+  providerName,
+} from "./lib/generate-provider.js";
+import { createVideoFromImage } from "./lib/media-generate.js";
 
 function parseArgs(argv) {
   const args = {
@@ -39,6 +44,7 @@ async function main() {
   const mediaBase = `media/${id}`;
 
   console.log(`Generating AI post: ${args.topic}`);
+  console.log(`Provider: ${describeProvider()} (${providerName()})`);
   console.log(`Media mode: ${args.media}`);
   console.log(`Platforms: ${args.platforms.join(", ")}`);
   console.log(`Initial status: ${args.status}\n`);
@@ -47,20 +53,18 @@ async function main() {
   const media = {};
 
   if (args.media === "image" || args.media === "both") {
-    console.log("Generating image with DALL-E...");
-    const imageUrl = await generateImage(generated.image_prompt);
+    console.log("Generating image...");
     const imagePath = `${mediaBase}.jpg`;
-    await downloadImage(imageUrl, imagePath);
+    await generateAndSaveImage(generated.image_prompt ?? args.topic, imagePath);
     media.image = imagePath;
     console.log(`Saved image: ${imagePath}`);
   }
 
   if (args.media === "video" || args.media === "both") {
     if (!media.image) {
-      console.log("Generating base image for video...");
-      const imageUrl = await generateImage(generated.image_prompt);
+      console.log("Generating base image...");
       const imagePath = `${mediaBase}.jpg`;
-      await downloadImage(imageUrl, imagePath);
+      await generateAndSaveImage(generated.image_prompt ?? args.topic, imagePath);
       media.image = imagePath;
     }
 
@@ -83,7 +87,8 @@ async function main() {
     generated_at: new Date().toISOString(),
     topic: args.topic,
     ai: {
-      image_prompt: generated.image_prompt,
+      provider: providerName(),
+      image_prompt: generated.image_prompt ?? args.topic,
       media_mode: args.media,
     },
   };

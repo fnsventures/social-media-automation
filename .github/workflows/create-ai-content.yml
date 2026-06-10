@@ -45,9 +45,10 @@ jobs:
 
       - name: Generate AI caption, image, and optional video
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
-          OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL || 'dall-e-3' }}
+          GENERATION_PROVIDER: ${{ vars.GENERATION_PROVIDER || 'local' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_TEXT_MODEL: ${{ vars.GEMINI_TEXT_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image' }}
         run: |
           node scripts/generate-full-post.js "${{ inputs.topic }}" \
             --media "${{ inputs.media_type }}" \

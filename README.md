@@ -51,7 +51,7 @@ Go to **Repository → Settings → Secrets and variables → Actions → New re
 | `YOUTUBE_CLIENT_ID` | YouTube | OAuth client |
 | `YOUTUBE_CLIENT_SECRET` | YouTube | OAuth client |
 | `YOUTUBE_REFRESH_TOKEN` | YouTube | Long-lived upload token |
-| `OPENAI_API_KEY` | AI generation | Optional |
+| `GEMINI_API_KEY` | AI generation (Gemini) | Optional |
 
 Never commit tokens to the repo. Use GitHub Secrets only.
 

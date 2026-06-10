@@ -3,16 +3,9 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { ROOT } from "./config.js";
 
-export async function downloadImage(url, relativePath) {
+export function saveImageBuffer(buffer, relativePath) {
   const absolutePath = path.resolve(ROOT, relativePath);
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download image: ${response.status}`);
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(absolutePath, buffer);
   return relativePath;
 }

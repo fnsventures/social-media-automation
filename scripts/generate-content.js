@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { saveGeneratedPost } from "./lib/content.js";
-import { generatePostCopy } from "./lib/openai.js";
+import { generatePostCopy, providerName } from "./lib/generate-provider.js";
 import { slugify } from "./lib/brand.js";
 
 async function main() {
@@ -8,7 +8,7 @@ async function main() {
     process.argv.slice(2).join(" ") ||
     "monsoon driving safety and tyre care for highway travelers";
 
-  console.log(`Generating caption-only post for topic: ${topic}`);
+  console.log(`Generating caption-only post (${providerName()}) for topic: ${topic}`);
   const generated = await generatePostCopy(topic);
   const id = `${slugify(topic)}-${Date.now()}`;
 
@@ -23,11 +23,12 @@ async function main() {
     media: {},
     generated_at: new Date().toISOString(),
     topic,
+    ai: { provider: providerName() },
   };
 
   const filePath = saveGeneratedPost(post);
   console.log(`Saved draft post: ${filePath}`);
-  console.log("Run npm run generate:full for AI image/video, or attach media manually.");
+  console.log("Run npm run generate:full for image/video, or attach media manually.");
 }
 
 main().catch((error) => {

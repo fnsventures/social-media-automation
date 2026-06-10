@@ -36,11 +36,12 @@ export const config = {
     clientSecret: readEnv("YOUTUBE_CLIENT_SECRET"),
     refreshToken: readEnv("YOUTUBE_REFRESH_TOKEN"),
   },
-  openai: {
-    apiKey: readEnv("OPENAI_API_KEY"),
-    model: readEnv("OPENAI_MODEL", "gpt-4o-mini"),
-    imageModel: readEnv("OPENAI_IMAGE_MODEL", "dall-e-3"),
+  gemini: {
+    apiKey: readEnv("GEMINI_API_KEY"),
+    textModel: readEnv("GEMINI_TEXT_MODEL", "gemini-2.0-flash"),
+    imageModel: readEnv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
   },
+  generationProvider: readEnv("GENERATION_PROVIDER", "local").toLowerCase(),
 };
 
 export function resolveMediaPath(relativePath) {

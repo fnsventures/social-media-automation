@@ -21,6 +21,7 @@
   "dependencies": {
     "googleapis": "^144.0.0",
     "js-yaml": "^4.1.0",
+    "sharp": "^0.33.5",
     "twitter-api-v2": "^1.19.0"
   }
 }
