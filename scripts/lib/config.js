@@ -41,7 +41,16 @@ export const config = {
     textModel: readEnv("GEMINI_TEXT_MODEL", "gemini-2.0-flash"),
     imageModel: readEnv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
   },
+  pollinations: {
+    apiKey: readEnv("POLLINATIONS_API_KEY"),
+    model: readEnv("POLLINATIONS_MODEL", "flux"),
+  },
+  huggingface: {
+    apiKey: readEnv("HF_TOKEN"),
+    imageModel: readEnv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell"),
+  },
   generationProvider: readEnv("GENERATION_PROVIDER", "local").toLowerCase(),
+  imageProvider: readEnv("IMAGE_PROVIDER", "").toLowerCase(),
 };
 
 export function resolveMediaPath(relativePath) {

@@ -49,9 +49,14 @@ jobs:
       - name: Generate AI content
         env:
           GENERATION_PROVIDER: ${{ vars.GENERATION_PROVIDER || 'local' }}
+          IMAGE_PROVIDER: ${{ vars.IMAGE_PROVIDER || 'pollinations' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_TEXT_MODEL: ${{ vars.GEMINI_TEXT_MODEL || 'gemini-2.0-flash' }}
           GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image' }}
+          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          POLLINATIONS_MODEL: ${{ vars.POLLINATIONS_MODEL || 'flux' }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_IMAGE_MODEL: ${{ vars.HF_IMAGE_MODEL || 'black-forest-labs/FLUX.1-schnell' }}
         run: node scripts/generate-content.js "${{ inputs.topic }}"
 
       - name: Attach media and set platforms on latest post

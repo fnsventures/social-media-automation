@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { slugify } from "./lib/brand.js";
+import { config } from "./lib/config.js";
 import { saveGeneratedPost } from "./lib/content.js";
 import {
   describeProvider,
   generateAndSaveImage,
   generatePostCopy,
+  imageProviderName,
   providerName,
 } from "./lib/generate-provider.js";
 import { createVideoFromImage } from "./lib/media-generate.js";
@@ -88,6 +90,8 @@ async function main() {
     topic: args.topic,
     ai: {
       provider: providerName(),
+      text_provider: config.generationProvider,
+      image_provider: imageProviderName(),
       image_prompt: generated.image_prompt ?? args.topic,
       media_mode: args.media,
     },
