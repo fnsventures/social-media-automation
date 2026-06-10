@@ -86,6 +86,17 @@ textarea {
   gap: 0.75rem;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.actions .btn {
+  width: auto;
+}
+
 @media (max-width: 640px) {
   .row {
     grid-template-columns: 1fr;

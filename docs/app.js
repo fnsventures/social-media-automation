@@ -10,6 +10,7 @@ const WORKFLOWS = {
 };
 
 const PLATFORMS = ["facebook", "instagram", "youtube"];
+const SESSION_KEY = "sm-session";
 
 function loadConfig() {
   const saved = JSON.parse(localStorage.getItem("sm-config") || "{}");
@@ -69,11 +70,13 @@ async function waitForWorkflow(config, workflowFile, startedAfter) {
   for (let attempt = 0; attempt < 90; attempt += 1) {
     const data = await api(
       config,
-      `/repos/${config.owner}/${config.repo}/actions/workflows/${workflowFile}/runs?per_page=5`
+      `/repos/${config.owner}/${config.repo}/actions/workflows/${workflowFile}/runs?per_page=10`
     );
 
     const run = data.workflow_runs.find(
-      (entry) => new Date(entry.created_at) >= startedAfter
+      (entry) =>
+        entry.event === "workflow_dispatch" &&
+        new Date(entry.created_at) >= startedAfter
     );
 
     if (run) {
@@ -91,34 +94,66 @@ async function waitForWorkflow(config, workflowFile, startedAfter) {
   throw new Error("Timed out waiting for GitHub Actions workflow.");
 }
 
-async function fetchJsonFile(config, filePath) {
-  const response = await fetch(rawUrl(config, filePath), {
-    headers: authHeaders(config),
-  });
-  if (!response.ok) {
-    throw new Error(`Could not load ${filePath}`);
-  }
-  return response.json();
-}
-
-async function fetchTextFile(config, filePath) {
-  const response = await fetch(rawUrl(config, filePath), {
-    headers: authHeaders(config),
-  });
-  if (!response.ok) {
-    throw new Error(`Could not load ${filePath}`);
-  }
-  return response.text();
-}
-
-async function loadGeneratedPost(config) {
-  const manifest = await fetchJsonFile(config, "content/.last-generated.json");
-  const yamlText = await fetchTextFile(
+async function fetchRepoText(config, filePath) {
+  const data = await api(
     config,
-    `content/posts/${manifest.post_id}.yaml`
+    `/repos/${config.owner}/${config.repo}/contents/${filePath}?ref=${encodeURIComponent(config.branch)}`
   );
-  const post = window.jsyaml.load(yamlText);
-  return { manifest, post };
+
+  if (Array.isArray(data)) {
+    throw new Error(`Expected file: ${filePath}`);
+  }
+
+  return atob(data.content.replace(/\n/g, ""));
+}
+
+async function loadGeneratedPost(config, generatedAfter, maxAttempts = 20) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const manifest = JSON.parse(
+        await fetchRepoText(config, "content/.last-generated.json")
+      );
+
+      if (generatedAfter && new Date(manifest.created_at) < generatedAfter) {
+        throw new Error("Waiting for updated manifest...");
+      }
+
+      const yamlText = await fetchRepoText(
+        config,
+        `content/posts/${manifest.post_id}.yaml`
+      );
+      const post = window.jsyaml.load(yamlText);
+      return { manifest, post };
+    } catch (error) {
+      lastError = error;
+      await sleep(2000);
+    }
+  }
+
+  throw lastError ?? new Error("Could not load generated post.");
+}
+
+function saveSession(topic, post) {
+  sessionStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({
+      topic,
+      post,
+      savedAt: new Date().toISOString(),
+    })
+  );
+}
+
+function loadSession() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function selectedPlatforms() {
@@ -142,16 +177,17 @@ function setStep(step) {
   });
 }
 
-function renderPreview(config, post) {
+function renderPreview(config, post, topic = "") {
   const preview = document.getElementById("preview");
   const tags = (post.hashtags || []).map((tag) => `#${tag}`).join(" ");
   let mediaHtml = "";
+  const cacheBust = Date.now();
 
   if (post.media?.image) {
-    mediaHtml += `<img src="${rawUrl(config, post.media.image)}" alt="Generated image" />`;
+    mediaHtml += `<img src="${rawUrl(config, post.media.image)}?t=${cacheBust}" alt="Generated image" />`;
   }
   if (post.media?.video) {
-    mediaHtml += `<video controls src="${rawUrl(config, post.media.video)}"></video>`;
+    mediaHtml += `<video controls src="${rawUrl(config, post.media.video)}?t=${cacheBust}"></video>`;
   }
 
   preview.innerHTML = `
@@ -165,6 +201,10 @@ function renderPreview(config, post) {
 
   document.getElementById("review-section").classList.remove("hidden");
   setStep(2);
+  currentPost = post;
+  if (topic) {
+    saveSession(topic, post);
+  }
 }
 
 function getConfigFromForm() {
@@ -214,24 +254,55 @@ document.getElementById("generate-btn").addEventListener("click", async () => {
   setStep(1);
 
   try {
-    const startedAt = new Date(Date.now() - 5000);
+    const startedAt = new Date();
     await dispatchWorkflow(config, WORKFLOWS.create, {
       topic,
       media_type: mediaType,
       platforms: platforms.join(","),
     });
 
-    setStatus("generate-status", "Generating caption and media on GitHub Actions...");
+    setStatus(
+      "generate-status",
+      "Generating caption and media on GitHub Actions (ignore any Pages deployment — that is separate)..."
+    );
     await waitForWorkflow(config, WORKFLOWS.create, startedAt);
 
-    setStatus("generate-status", "Loading generated post...");
-    await sleep(3000);
-    const { post } = await loadGeneratedPost(config);
-    currentPost = post;
-    renderPreview(config, post);
+    setStatus("generate-status", "Loading generated post from repository...");
+    const { post } = await loadGeneratedPost(config, startedAt);
+    renderPreview(config, post, topic);
     setStatus(
       "generate-status",
       "Content generated. Review below, then verify and publish.",
+      "ok"
+    );
+  } catch (error) {
+    setStatus("generate-status", error.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("reload-btn").addEventListener("click", async () => {
+  const config = getConfigFromForm();
+  if (!config.token) {
+    setStatus("generate-status", "Save your GitHub token first.", "error");
+    return;
+  }
+
+  const btn = document.getElementById("reload-btn");
+  btn.disabled = true;
+  setStatus("generate-status", "Loading latest generated post...");
+
+  try {
+    const { post, manifest } = await loadGeneratedPost(config);
+    const topic = manifest.topic || post.topic || "";
+    if (topic) {
+      document.getElementById("prompt").value = topic;
+    }
+    renderPreview(config, post, topic);
+    setStatus(
+      "generate-status",
+      "Loaded latest generated post. Review below, then verify and publish.",
       "ok"
     );
   } catch (error) {
@@ -311,7 +382,7 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
   );
 
   try {
-    const startedAt = new Date(Date.now() - 5000);
+    const startedAt = new Date();
     await dispatchWorkflow(config, WORKFLOWS.publish, {
       post_id: currentPost.id,
       dry_run: String(dryRun),
@@ -341,5 +412,19 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("github-branch").value = config.branch;
   if (config.token) {
     document.getElementById("github-token").value = config.token;
+  }
+
+  const session = loadSession();
+  if (session?.post) {
+    currentPost = session.post;
+    if (session.topic) {
+      document.getElementById("prompt").value = session.topic;
+    }
+    renderPreview(config, session.post);
+    setStatus(
+      "generate-status",
+      "Restored your last generated post from this browser session.",
+      "ok"
+    );
   }
 });
