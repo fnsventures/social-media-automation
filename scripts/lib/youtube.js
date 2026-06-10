@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { google } from "googleapis";
 import { config, ROOT } from "./config.js";
-import { createVideoFromImage } from "./media-generate.js";
+import { createVideoFromImage } from "./ffmpeg-video.js";
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(

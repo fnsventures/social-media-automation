@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
-import { config, resolveMediaPath } from "./config.js";
+import { config, resolveMediaPath, SUPPORTED_PLATFORMS } from "./config.js";
+
+const SUPPORTED_PLATFORM_SET = new Set(SUPPORTED_PLATFORMS);
 
 function listPostFiles(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -20,9 +22,7 @@ function buildCaption(post) {
 }
 
 function normalizePlatforms(platforms) {
-  return (platforms ?? [])
-    .map((p) => (p === "x" ? "twitter" : p))
-    .filter((p) => p !== "twitter");
+  return (platforms ?? []).filter((platform) => SUPPORTED_PLATFORM_SET.has(platform));
 }
 
 export function loadPost(filePath) {
@@ -47,7 +47,6 @@ export function loadPost(filePath) {
     platforms: normalizePlatforms(post.platforms),
     title: post.title ?? post.id,
     caption: buildCaption(post),
-    rawCaption: String(post.caption ?? "").trim(),
     hashtags: post.hashtags ?? [],
     imagePath,
     videoPath,
@@ -55,15 +54,13 @@ export function loadPost(filePath) {
 }
 
 export function loadPostsByStatus(status) {
-  const files = listPostFiles(config.contentDir);
-  return files
+  return listPostFiles(config.contentDir)
     .map((filePath) => loadPost(filePath))
     .filter((post) => post.status === status);
 }
 
 export function findPostById(postId) {
-  const files = listPostFiles(config.contentDir);
-  for (const filePath of files) {
+  for (const filePath of listPostFiles(config.contentDir)) {
     const post = loadPost(filePath);
     if (post.id === postId) return post;
   }
@@ -71,8 +68,7 @@ export function findPostById(postId) {
 }
 
 export function approvePost(postId) {
-  const files = listPostFiles(config.contentDir);
-  for (const filePath of files) {
+  for (const filePath of listPostFiles(config.contentDir)) {
     const raw = fs.readFileSync(filePath, "utf8");
     const post = yaml.load(raw);
     if (post.id !== postId) continue;
@@ -90,19 +86,42 @@ export function approvePost(postId) {
   throw new Error(`Post not found: ${postId}`);
 }
 
-export function loadPendingPosts({ onlyId } = {}) {
-  const files = listPostFiles(config.contentDir);
-  const now = Date.now();
+function isDue(post, now = Date.now()) {
+  if (!post.publishAt) return true;
+  const due = Date.parse(post.publishAt);
+  return Number.isFinite(due) && due <= now;
+}
 
-  return files
+export function loadPendingPosts({ onlyId } = {}) {
+  return listPostFiles(config.contentDir)
     .map((filePath) => loadPost(filePath))
     .filter((post) => {
       if (onlyId && post.id !== onlyId) return false;
       if (post.status !== "pending") return false;
-      if (!post.publishAt) return true;
-      const due = Date.parse(post.publishAt);
-      return Number.isFinite(due) && due <= now;
+      return isDue(post);
     });
+}
+
+export function loadPostsToPublish({ onlyId, dryRun = false } = {}) {
+  if (onlyId) {
+    const post = findPostById(onlyId);
+    if (!post) return [];
+    if (post.status === "pending" && isDue(post)) return [post];
+    if (dryRun && post.status === "review") return [post];
+    return [];
+  }
+
+  const pending = loadPendingPosts();
+  if (!dryRun) return pending;
+  return [...pending, ...loadPostsByStatus("review")];
+}
+
+export function savePostResults(filePath, results) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  const post = yaml.load(raw);
+  post.last_publish_attempt = new Date().toISOString();
+  post.results = results;
+  fs.writeFileSync(filePath, yaml.dump(post, { lineWidth: 120 }));
 }
 
 export function markPostPublished(filePath, results) {
@@ -115,11 +134,4 @@ export function markPostPublished(filePath, results) {
   const publishedPath = filePath.replace(/\.yaml$/, ".published.yaml");
   fs.writeFileSync(publishedPath, yaml.dump(post, { lineWidth: 120 }));
   fs.unlinkSync(filePath);
-}
-
-export function saveGeneratedPost(post) {
-  fs.mkdirSync(config.contentDir, { recursive: true });
-  const filePath = path.join(config.contentDir, `${post.id}.yaml`);
-  fs.writeFileSync(filePath, yaml.dump(post, { lineWidth: 120 }));
-  return filePath;
 }

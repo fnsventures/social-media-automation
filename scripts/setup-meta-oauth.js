@@ -16,18 +16,11 @@
  *
  * Run: npm run setup:meta
  */
-import fs from "node:fs";
 import http from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
-import { loadEnvFile } from "./lib/load-env.js";
+import { loadEnvFile, upsertEnvValue } from "./lib/load-env.js";
 
 loadEnvFile();
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
-const ENV_PATH = path.join(ROOT, ".env");
 const GRAPH = "https://graph.facebook.com/v21.0";
 const REDIRECT_URI = "http://localhost:8766/oauth/callback";
 const PORT = 8766;
@@ -63,21 +56,6 @@ async function graphGet(pathname, params = {}) {
     throw new Error(data.error?.message ?? `Graph API error: ${pathname}`);
   }
   return data;
-}
-
-function upsertEnvValue(key, value) {
-  let content = fs.existsSync(ENV_PATH)
-    ? fs.readFileSync(ENV_PATH, "utf8")
-    : fs.readFileSync(path.join(ROOT, ".env.example"), "utf8");
-
-  const line = `${key}=${value}`;
-  const pattern = new RegExp(`^${key}=.*$`, "m");
-  content = pattern.test(content)
-    ? content.replace(pattern, line)
-    : `${content.trimEnd()}\n${line}\n`;
-
-  fs.writeFileSync(ENV_PATH, content);
-  process.env[key] = value;
 }
 
 function openBrowser(url) {

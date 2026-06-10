@@ -5,13 +5,14 @@ export function verifyPost(post, { forPublish = false } = {}) {
   const warnings = [];
 
   if (!post.id) errors.push("Missing post id.");
+  if (!post.caption?.trim()) errors.push("Missing caption.");
   if (!post.platforms?.length) errors.push("No platforms selected.");
 
   if (forPublish && post.status !== "pending") {
     errors.push(`Status is "${post.status}" — must be "pending" to publish.`);
   }
 
-  if (post.status === "review") {
+  if (post.status === "review" && !forPublish) {
     warnings.push("Post is awaiting approval (status: review).");
   }
 

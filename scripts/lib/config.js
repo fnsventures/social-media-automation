@@ -16,10 +16,11 @@ function isTruthy(value) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+export const SUPPORTED_PLATFORMS = ["facebook", "instagram", "youtube"];
+
 export const config = {
   dryRun: isTruthy(readEnv("DRY_RUN")),
   contentDir: path.resolve(ROOT, readEnv("CONTENT_DIR", "content/posts")),
-  timezone: readEnv("TIMEZONE", "Asia/Kolkata"),
   meta: {
     pageAccessToken: readEnv("META_PAGE_ACCESS_TOKEN"),
     pageId: readEnv("META_PAGE_ID"),

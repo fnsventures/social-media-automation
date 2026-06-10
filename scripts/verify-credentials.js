@@ -1,19 +1,12 @@
 #!/usr/bin/env node
-import { config, platformConfigured } from "./lib/config.js";
+import { config, platformConfigured, SUPPORTED_PLATFORMS } from "./lib/config.js";
 import { verifyYoutubeCredentials } from "./lib/youtube.js";
-
-const checks = [
-  ["facebook", () => platformConfigured("facebook")],
-  ["instagram", () => platformConfigured("instagram")],
-  ["youtube", () => platformConfigured("youtube")],
-];
 
 async function main() {
   console.log("Credential check\n");
 
-  for (const [name, configured] of checks) {
-    const ok = configured();
-    console.log(`${ok ? "OK" : "MISSING"}  ${name}`);
+  for (const name of SUPPORTED_PLATFORMS) {
+    console.log(`${platformConfigured(name) ? "OK" : "MISSING"}  ${name}`);
   }
 
   if (platformConfigured("youtube")) {

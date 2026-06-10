@@ -16,14 +16,16 @@
   <p>Last updated: June 10, 2026</p>
 
   <p>
-    This app is used internally to publish content to a single Facebook Page and
-    Instagram Business account. To remove your data from this app:
+    This app is used internally to publish content to a single Facebook Page,
+    Instagram Business account, and YouTube channel. To remove your data from
+    this app:
   </p>
 
   <h2>Steps to delete data</h2>
   <ol>
     <li>Revoke app access in Facebook: <strong>Settings → Apps and Websites</strong>, remove this app.</li>
-    <li>Remove stored tokens from GitHub: delete <code>META_*</code> repository secrets.</li>
+    <li>Revoke YouTube access in Google: <strong>myaccount.google.com → Security → Third-party access</strong>, remove the OAuth app.</li>
+    <li>Remove stored tokens from GitHub: delete <code>META_*</code> and <code>YOUTUBE_*</code> repository secrets.</li>
     <li>Delete local <code>.env</code> credentials from your computer.</li>
     <li>Optionally delete published post YAML files from the repository if you want content removed from version history (contact repo admin).</li>
   </ol>

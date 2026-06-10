@@ -3,13 +3,6 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { ROOT } from "./config.js";
 
-export function saveImageBuffer(buffer, relativePath) {
-  const absolutePath = path.resolve(ROOT, relativePath);
-  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-  fs.writeFileSync(absolutePath, buffer);
-  return relativePath;
-}
-
 export function createVideoFromImage(relativeImagePath, relativeVideoPath, seconds = 12) {
   const imagePath = path.resolve(ROOT, relativeImagePath);
   const videoPath = path.resolve(ROOT, relativeVideoPath);

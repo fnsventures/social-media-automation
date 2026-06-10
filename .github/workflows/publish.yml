@@ -30,13 +30,27 @@ jobs:
           node-version: "20"
           cache: npm
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
       - name: Install dependencies
         run: npm ci
 
+      - name: Check for pending posts
+        id: pending
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.post_id }}" ]; then
+            ARGS="--post ${{ inputs.post_id }}"
+          fi
+          if node scripts/has-pending-posts.js $ARGS; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: FedericoCarbon/setup-ffmpeg@v3
+        if: steps.pending.outputs.found == 'true'
+
       - name: Verify credentials
+        if: steps.pending.outputs.found == 'true'
         env:
           META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
           META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
@@ -47,6 +61,7 @@ jobs:
         run: node scripts/verify-credentials.js
 
       - name: Publish pending posts
+        if: steps.pending.outputs.found == 'true'
         env:
           META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
           META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
@@ -66,10 +81,14 @@ jobs:
           node scripts/publish.js $ARGS
 
       - name: Commit published post archives
-        if: inputs.dry_run != true
+        if: steps.pending.outputs.found == 'true' && inputs.dry_run != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add content/posts/ media/
           git diff --staged --quiet || git commit -m "chore: archive published social posts"
           git push
+
+      - name: No pending posts
+        if: steps.pending.outputs.found != 'true'
+        run: echo "No pending posts ready to publish."

@@ -1,5 +1,11 @@
-# Copy this file, rename (e.g. monday-tip.yaml), set status: pending, and commit.
-# GitHub Actions publishes posts when publish_at is due (or leave publish_at empty for immediate).
+# Copy this file, rename (e.g. monday-tip.yaml), and commit.
+#
+# Status workflow:
+#   draft   — work in progress (ignored by automation)
+#   review  — created by Social Studio; approve before publishing
+#   pending — ready to publish (immediately, or when publish_at is due)
+#
+# GitHub Actions publishes pending posts when publish_at is empty or in the past.
 
 id: example-welcome
 status: draft

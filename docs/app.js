@@ -58,6 +58,12 @@ function isVideoFile(file) {
   return file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name);
 }
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 async function api(config, path, options = {}) {
   const response = await fetch(`https://api.github.com${path}`, {
     ...options,
@@ -156,11 +162,19 @@ function selectedPlatforms() {
   );
 }
 
+function hideStatus(elementId) {
+  const el = document.getElementById(elementId);
+  el.classList.add("hidden");
+  el.textContent = "";
+  el.className = "status hidden";
+}
+
 function setStatus(elementId, message, type = "") {
   const el = document.getElementById(elementId);
   el.classList.remove("hidden");
   el.textContent = message;
   el.className = `status${type ? ` ${type}` : ""}`;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function setStep(step) {
@@ -169,6 +183,31 @@ function setStep(step) {
     if (index + 1 < step) node.classList.add("done");
     if (index + 1 === step) node.classList.add("active");
   });
+}
+
+function showStep(step) {
+  document.getElementById("upload-section").classList.toggle("hidden", step !== 1);
+  document.getElementById("review-section").classList.toggle("hidden", step < 2);
+  document.getElementById("publish-section").classList.toggle("hidden", step < 3);
+  setStep(step);
+}
+
+function setButtonLoading(btn, loading) {
+  btn.disabled = loading;
+  btn.classList.toggle("loading", loading);
+}
+
+function updateConnectionBadge() {
+  const config = loadConfig();
+  const badge = document.getElementById("connection-badge");
+  const connected = Boolean(config.token);
+  badge.textContent = connected ? "GitHub connected" : "Not connected";
+  badge.classList.toggle("connected", connected);
+}
+
+function updateCaptionCount() {
+  const caption = document.getElementById("caption").value;
+  document.getElementById("caption-count").textContent = caption.length.toLocaleString();
 }
 
 function saveDraft(draft) {
@@ -209,6 +248,9 @@ function buildPostYaml(draft) {
 
 function renderPreview(container, draft, mediaUrl) {
   const tags = draft.hashtags.map((tag) => `#${tag}`).join(" ");
+  const platformTags = draft.platforms
+    .map((p) => `<span class="tag platform">${p}</span>`)
+    .join("");
   let mediaHtml = "";
 
   if (draft.mediaType === "video") {
@@ -218,12 +260,19 @@ function renderPreview(container, draft, mediaUrl) {
   }
 
   container.innerHTML = `
-    <p><strong>Post ID:</strong> <code>${draft.id}</code></p>
-    <p><strong>Platforms:</strong> ${draft.platforms.join(", ")}</p>
-    <p><strong>Title:</strong> ${draft.title}</p>
-    <pre>${draft.caption}${tags ? `\n\n${tags}` : ""}</pre>
+    <div class="preview-meta">${platformTags}</div>
+    <h3>${escapeHtml(draft.title)}</h3>
+    <p class="caption-text">${escapeHtml(draft.caption)}</p>
+    ${tags ? `<p class="hashtags">${escapeHtml(tags)}</p>` : ""}
     ${mediaHtml}
+    <p class="post-id">Post ID: <code>${escapeHtml(draft.id)}</code></p>
   `;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function validateDraftInput() {
@@ -268,6 +317,52 @@ function revokePreviewUrl() {
   }
 }
 
+function showMediaPreview(file) {
+  const dropzone = document.getElementById("dropzone");
+  const empty = document.getElementById("dropzone-empty");
+  const preview = document.getElementById("upload-preview");
+
+  revokePreviewUrl();
+  previewUrl = URL.createObjectURL(file);
+
+  empty.classList.add("hidden");
+  preview.classList.remove("hidden");
+  dropzone.classList.add("has-file");
+
+  const meta = `<p class="hint">${escapeHtml(file.name)} · ${formatFileSize(file.size)} · <button class="link-btn" id="change-file-btn" type="button">Change file</button></p>`;
+  if (isVideoFile(file)) {
+    preview.innerHTML = `${meta}<video controls src="${previewUrl}"></video>`;
+  } else {
+    preview.innerHTML = `${meta}<img src="${previewUrl}" alt="Selected media" />`;
+  }
+
+  document.getElementById("change-file-btn").addEventListener("click", (event) => {
+    event.stopPropagation();
+    document.getElementById("media-file").click();
+  });
+}
+
+function clearMediaPreview() {
+  const dropzone = document.getElementById("dropzone");
+  const empty = document.getElementById("dropzone-empty");
+  const preview = document.getElementById("upload-preview");
+
+  revokePreviewUrl();
+  empty.classList.remove("hidden");
+  preview.classList.add("hidden");
+  preview.innerHTML = "";
+  dropzone.classList.remove("has-file");
+}
+
+function assignMediaFile(file) {
+  const input = document.getElementById("media-file");
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  showMediaPreview(file);
+  hideStatus("upload-status");
+}
+
 document.getElementById("save-config").addEventListener("click", () => {
   const config = getConfigFromForm();
   if (!config.token) {
@@ -275,38 +370,82 @@ document.getElementById("save-config").addEventListener("click", () => {
     return;
   }
   saveConfig(config);
+  updateConnectionBadge();
   setStatus("config-status", "Settings saved in this browser.", "ok");
+});
+
+document.getElementById("toggle-token").addEventListener("click", () => {
+  const input = document.getElementById("github-token");
+  const btn = document.getElementById("toggle-token");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  btn.textContent = showing ? "Show" : "Hide";
+  btn.setAttribute("aria-label", showing ? "Show token" : "Hide token");
+});
+
+document.getElementById("caption").addEventListener("input", updateCaptionCount);
+
+document.getElementById("browse-btn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  document.getElementById("media-file").click();
+});
+
+document.getElementById("dropzone").addEventListener("click", (event) => {
+  if (event.target.closest("#browse-btn")) return;
+  if (!document.getElementById("dropzone").classList.contains("has-file")) {
+    document.getElementById("media-file").click();
+  }
+});
+
+document.getElementById("dropzone").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    document.getElementById("media-file").click();
+  }
+});
+
+["dragenter", "dragover"].forEach((type) => {
+  document.getElementById("dropzone").addEventListener(type, (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.getElementById("dropzone").classList.add("dragover");
+  });
+});
+
+["dragleave", "drop"].forEach((type) => {
+  document.getElementById("dropzone").addEventListener(type, (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.getElementById("dropzone").classList.remove("dragover");
+  });
+});
+
+document.getElementById("dropzone").addEventListener("drop", (event) => {
+  const file = event.dataTransfer?.files?.[0];
+  if (file && (file.type.startsWith("image/") || file.type.startsWith("video/"))) {
+    assignMediaFile(file);
+  } else {
+    setStatus("upload-status", "Please drop an image or video file.", "error");
+  }
 });
 
 document.getElementById("media-file").addEventListener("change", () => {
   const file = document.getElementById("media-file").files?.[0];
-  const preview = document.getElementById("upload-preview");
-  revokePreviewUrl();
-
   if (!file) {
-    preview.classList.add("hidden");
-    preview.innerHTML = "";
+    clearMediaPreview();
     return;
   }
-
-  previewUrl = URL.createObjectURL(file);
-  preview.classList.remove("hidden");
-  if (isVideoFile(file)) {
-    preview.innerHTML = `<video controls src="${previewUrl}"></video>`;
-  } else {
-    preview.innerHTML = `<img src="${previewUrl}" alt="Selected media" />`;
-  }
+  showMediaPreview(file);
 });
 
 document.getElementById("review-btn").addEventListener("click", () => {
+  hideStatus("upload-status");
   try {
     draft = validateDraftInput();
     revokePreviewUrl();
     previewUrl = URL.createObjectURL(draft.file);
     renderPreview(document.getElementById("preview"), draft, previewUrl);
-    document.getElementById("review-section").classList.remove("hidden");
-    document.getElementById("publish-section").classList.add("hidden");
-    setStep(2);
+    showStep(2);
     setStatus("review-status", "Check everything looks correct, then save to GitHub.", "ok");
   } catch (error) {
     setStatus("upload-status", error.message, "error");
@@ -314,15 +453,14 @@ document.getElementById("review-btn").addEventListener("click", () => {
 });
 
 document.getElementById("back-btn").addEventListener("click", () => {
-  document.getElementById("review-section").classList.add("hidden");
-  document.getElementById("publish-section").classList.add("hidden");
-  setStep(1);
+  hideStatus("review-status");
+  showStep(1);
 });
 
 document.getElementById("save-btn").addEventListener("click", async () => {
   const config = getConfigFromForm();
   if (!config.token) {
-    setStatus("review-status", "Save your GitHub token first.", "error");
+    setStatus("review-status", "Save your GitHub token in settings first.", "error");
     return;
   }
   if (!draft) {
@@ -331,8 +469,8 @@ document.getElementById("save-btn").addEventListener("click", async () => {
   }
 
   const btn = document.getElementById("save-btn");
-  btn.disabled = true;
-  setStatus("review-status", "Uploading media and post to GitHub...");
+  setButtonLoading(btn, true);
+  setStatus("review-status", "Uploading media and post to GitHub…");
 
   try {
     const mediaBase64 = await fileToBase64(draft.file);
@@ -354,13 +492,12 @@ document.getElementById("save-btn").addEventListener("click", async () => {
     draft.saved = true;
     saveDraft({ ...draft, fileName: draft.file.name, file: null });
 
-    document.getElementById("publish-section").classList.remove("hidden");
-    setStep(3);
+    showStep(3);
     setStatus("review-status", "Saved to GitHub. Ready to publish.", "ok");
   } catch (error) {
     setStatus("review-status", error.message, "error");
   } finally {
-    btn.disabled = false;
+    setButtonLoading(btn, false);
   }
 });
 
@@ -373,8 +510,8 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
 
   const dryRun = document.getElementById("dry-run").checked;
   const btn = document.getElementById("publish-btn");
-  btn.disabled = true;
-  setStatus("publish-status", dryRun ? "Running dry run..." : "Publishing...");
+  setButtonLoading(btn, true);
+  setStatus("publish-status", dryRun ? "Running dry run…" : "Publishing to your platforms…");
 
   try {
     const startedAt = new Date();
@@ -394,7 +531,7 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
   } catch (error) {
     setStatus("publish-status", error.message, "error");
   } finally {
-    btn.disabled = false;
+    setButtonLoading(btn, false);
   }
 });
 
@@ -406,6 +543,8 @@ window.addEventListener("DOMContentLoaded", () => {
   if (config.token) {
     document.getElementById("github-token").value = config.token;
   }
+  updateConnectionBadge();
+  updateCaptionCount();
 
   const saved = loadDraft();
   if (saved?.saved) {
@@ -413,6 +552,7 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("title").value = saved.title || "";
     document.getElementById("caption").value = saved.caption || "";
     document.getElementById("hashtags").value = (saved.hashtags || []).join(", ");
+    updateCaptionCount();
     PLATFORMS.forEach((platform) => {
       document.getElementById(`platform-${platform}`).checked = (saved.platforms || []).includes(platform);
     });
@@ -421,9 +561,7 @@ window.addEventListener("DOMContentLoaded", () => {
       saved,
       `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/${saved.mediaPath}?t=${Date.now()}`
     );
-    document.getElementById("review-section").classList.remove("hidden");
-    document.getElementById("publish-section").classList.remove("hidden");
-    setStep(3);
+    showStep(3);
     setStatus("review-status", `Restored saved post "${saved.id}". You can publish again.`, "ok");
   }
 });

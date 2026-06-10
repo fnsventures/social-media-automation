@@ -8,6 +8,7 @@
     "publish:dry-run": "DRY_RUN=true node scripts/publish.js",
     "verify:post": "node scripts/verify-post.js",
     "approve:post": "node scripts/approve-post.js",
+    "publish:pipeline": "node scripts/publish-pipeline.js",
     "verify": "node scripts/verify-credentials.js",
     "setup:meta": "node scripts/setup-meta-oauth.js",
     "setup:youtube": "node scripts/setup-youtube-oauth.js"
@@ -17,7 +18,6 @@
   },
   "dependencies": {
     "googleapis": "^144.0.0",
-    "js-yaml": "^4.1.0",
-    "twitter-api-v2": "^1.19.0"
+    "js-yaml": "^4.1.0"
   }
 }
