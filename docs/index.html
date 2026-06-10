@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bishnupriya Fuels — Social Studio</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Bishnupriya Fuels — Social Studio</h1>
+    <p>Generate AI content, review it, and publish to Facebook, Instagram, and YouTube.</p>
+  </header>
+
+  <main>
+    <div class="steps">
+      <span class="step active" id="step-1">1. Generate</span>
+      <span class="step" id="step-2">2. Review</span>
+      <span class="step" id="step-3">3. Verify</span>
+      <span class="step" id="step-4">4. Publish</span>
+    </div>
+
+    <section class="card">
+      <h2>GitHub connection</h2>
+      <p class="hint">
+        Create a fine-grained Personal Access Token with <strong>Contents: Read and write</strong>
+        and <strong>Actions: Read and write</strong> for this repository.
+        The token stays in your browser only.
+      </p>
+      <div class="row">
+        <div>
+          <label for="github-owner">GitHub owner</label>
+          <input id="github-owner" value="privatefnsventures-maker" />
+        </div>
+        <div>
+          <label for="github-repo">Repository</label>
+          <input id="github-repo" value="social-media-automation" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="github-branch">Branch</label>
+          <input id="github-branch" value="master" />
+        </div>
+        <div>
+          <label for="github-token">GitHub token</label>
+          <input id="github-token" type="password" placeholder="github_pat_..." />
+        </div>
+      </div>
+      <button class="btn btn-secondary" id="save-config" type="button">Save settings</button>
+      <div id="config-status" class="status hidden"></div>
+    </section>
+
+    <section class="card">
+      <h2>1. Generate with AI</h2>
+      <label for="prompt">Prompt / topic</label>
+      <textarea id="prompt" placeholder="e.g. monsoon tyre care tips for highway drivers visiting our BPCL outlet"></textarea>
+
+      <div class="row">
+        <div>
+          <label for="media-type">Media type</label>
+          <select id="media-type">
+            <option value="image">Image only</option>
+            <option value="video">Video only</option>
+            <option value="both">Image + video</option>
+          </select>
+        </div>
+        <div>
+          <label>Platforms</label>
+          <div class="platforms">
+            <label><input type="checkbox" id="platform-facebook" checked /> Facebook</label>
+            <label><input type="checkbox" id="platform-instagram" checked /> Instagram</label>
+            <label><input type="checkbox" id="platform-youtube" checked /> YouTube</label>
+          </div>
+        </div>
+      </div>
+
+      <p class="hint">YouTube accepts images too — a short video is auto-created from the image at publish time.</p>
+      <button class="btn btn-primary" id="generate-btn" type="button">Generate content</button>
+      <div id="generate-status" class="status"></div>
+    </section>
+
+    <section class="card hidden" id="review-section">
+      <h2>2. Review generated content</h2>
+      <div class="preview" id="preview"></div>
+      <button class="btn btn-secondary" id="verify-btn" type="button">Verify content</button>
+      <div id="verify-status" class="status"></div>
+    </section>
+
+    <section class="card hidden" id="publish-section">
+      <h2>3. Publish to social media</h2>
+      <label>
+        <input type="checkbox" id="dry-run" checked />
+        Dry run first (recommended)
+      </label>
+      <button class="btn btn-primary" id="publish-btn" type="button">Approve and publish</button>
+      <div id="publish-status" class="status"></div>
+    </section>
+  </main>
+
+  <footer>
+    <a href="privacy-policy.html">Privacy</a> ·
+    <a href="data-deletion.html">Data deletion</a> ·
+    <a href="https://bishnupriyafuels.fnsventures.in/">Bishnupriya Fuels</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

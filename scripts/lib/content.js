@@ -20,7 +20,9 @@ function buildCaption(post) {
 }
 
 function normalizePlatforms(platforms) {
-  return (platforms ?? []).map((p) => (p === "x" ? "twitter" : p));
+  return (platforms ?? [])
+    .map((p) => (p === "x" ? "twitter" : p))
+    .filter((p) => p !== "twitter");
 }
 
 export function loadPost(filePath) {
@@ -50,6 +52,42 @@ export function loadPost(filePath) {
     imagePath,
     videoPath,
   };
+}
+
+export function loadPostsByStatus(status) {
+  const files = listPostFiles(config.contentDir);
+  return files
+    .map((filePath) => loadPost(filePath))
+    .filter((post) => post.status === status);
+}
+
+export function findPostById(postId) {
+  const files = listPostFiles(config.contentDir);
+  for (const filePath of files) {
+    const post = loadPost(filePath);
+    if (post.id === postId) return post;
+  }
+  return null;
+}
+
+export function approvePost(postId) {
+  const files = listPostFiles(config.contentDir);
+  for (const filePath of files) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const post = yaml.load(raw);
+    if (post.id !== postId) continue;
+
+    if (post.status !== "review") {
+      throw new Error(`Post "${postId}" is "${post.status}", expected "review".`);
+    }
+
+    post.status = "pending";
+    post.approved_at = new Date().toISOString();
+    fs.writeFileSync(filePath, yaml.dump(post, { lineWidth: 120 }));
+    return filePath;
+  }
+
+  throw new Error(`Post not found: ${postId}`);
 }
 
 export function loadPendingPosts({ onlyId } = {}) {

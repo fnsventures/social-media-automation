@@ -11,38 +11,48 @@ function createClient() {
   }).readWrite;
 }
 
+function formatTwitterError(error) {
+  const detail = error?.data?.detail ?? error?.data?.title;
+  if (detail) return `${error.message} — ${detail}`;
+  return error.message;
+}
+
 export async function publishToTwitter(post) {
-  const client = createClient();
-  const text = truncateTweet(post.caption);
+  try {
+    const client = createClient();
+    const text = truncateTweet(post.caption);
 
-  if (post.videoPath) {
-    const mediaId = await client.v1.uploadMedia(post.videoPath, {
-      mimeType: "video/mp4",
-    });
-    const tweet = await client.v2.tweet({ text, media: { media_ids: [mediaId] } });
+    if (post.videoPath) {
+      const mediaId = await client.v1.uploadMedia(post.videoPath, {
+        mimeType: "video/mp4",
+      });
+      const tweet = await client.v2.tweet({ text, media: { media_ids: [mediaId] } });
+      return {
+        platform: "twitter",
+        id: tweet.data.id,
+        url: `https://x.com/i/web/status/${tweet.data.id}`,
+      };
+    }
+
+    if (post.imagePath) {
+      const mediaId = await client.v1.uploadMedia(post.imagePath);
+      const tweet = await client.v2.tweet({ text, media: { media_ids: [mediaId] } });
+      return {
+        platform: "twitter",
+        id: tweet.data.id,
+        url: `https://x.com/i/web/status/${tweet.data.id}`,
+      };
+    }
+
+    const tweet = await client.v2.tweet(text);
     return {
       platform: "twitter",
       id: tweet.data.id,
       url: `https://x.com/i/web/status/${tweet.data.id}`,
     };
+  } catch (error) {
+    throw new Error(formatTwitterError(error));
   }
-
-  if (post.imagePath) {
-    const mediaId = await client.v1.uploadMedia(post.imagePath);
-    const tweet = await client.v2.tweet({ text, media: { media_ids: [mediaId] } });
-    return {
-      platform: "twitter",
-      id: tweet.data.id,
-      url: `https://x.com/i/web/status/${tweet.data.id}`,
-    };
-  }
-
-  const tweet = await client.v2.tweet(text);
-  return {
-    platform: "twitter",
-    id: tweet.data.id,
-    url: `https://x.com/i/web/status/${tweet.data.id}`,
-  };
 }
 
 function truncateTweet(text, max = 280) {

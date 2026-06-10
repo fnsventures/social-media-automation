@@ -39,6 +39,7 @@ export const config = {
   openai: {
     apiKey: readEnv("OPENAI_API_KEY"),
     model: readEnv("OPENAI_MODEL", "gpt-4o-mini"),
+    imageModel: readEnv("OPENAI_IMAGE_MODEL", "dall-e-3"),
   },
 };
 

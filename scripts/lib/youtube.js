@@ -1,25 +1,47 @@
 import fs from "node:fs";
 import path from "node:path";
 import { google } from "googleapis";
-import { config } from "./config.js";
+import { config, ROOT } from "./config.js";
+import { createVideoFromImage } from "./media-generate.js";
 
-function createYoutubeClient() {
-  const oauth2 = new google.auth.OAuth2(
+function createOAuth2Client() {
+  return new google.auth.OAuth2(
     config.youtube.clientId,
     config.youtube.clientSecret
   );
+}
+
+function createYoutubeClient() {
+  const oauth2 = createOAuth2Client();
   oauth2.setCredentials({ refresh_token: config.youtube.refreshToken });
   return google.youtube({ version: "v3", auth: oauth2 });
 }
 
-export async function publishToYoutube(post) {
-  if (!post.videoPath) {
-    throw new Error("YouTube requires a video file in media.video.");
+function guessVideoMime(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".mov") return "video/quicktime";
+  if (ext === ".webm") return "video/webm";
+  return "video/mp4";
+}
+
+function resolveVideoPath(post) {
+  if (post.videoPath) return post.videoPath;
+
+  if (!post.imagePath) {
+    throw new Error("YouTube requires media.image or media.video.");
   }
 
+  const relativeImage = path.relative(ROOT, post.imagePath);
+  const relativeVideo = `media/.generated/${post.id}-youtube.mp4`;
+  createVideoFromImage(relativeImage, relativeVideo);
+  return path.resolve(ROOT, relativeVideo);
+}
+
+export async function publishToYoutube(post) {
   const youtube = createYoutubeClient();
-  const fileSize = fs.statSync(post.videoPath).size;
-  const mimeType = guessVideoMime(post.videoPath);
+  const videoPath = resolveVideoPath(post);
+  const fileSize = fs.statSync(videoPath).size;
+  const mimeType = guessVideoMime(videoPath);
 
   const response = await youtube.videos.insert(
     {
@@ -37,7 +59,7 @@ export async function publishToYoutube(post) {
         },
       },
       media: {
-        body: fs.createReadStream(post.videoPath),
+        body: fs.createReadStream(videoPath),
         mimeType,
       },
     },
@@ -53,15 +75,12 @@ export async function publishToYoutube(post) {
   };
 }
 
-function guessVideoMime(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".mov") return "video/quicktime";
-  if (ext === ".webm") return "video/webm";
-  return "video/mp4";
-}
-
 export async function verifyYoutubeCredentials() {
-  const youtube = createYoutubeClient();
-  const channels = await youtube.channels.list({ part: ["snippet"], mine: true });
-  return channels.data.items?.[0]?.snippet?.title ?? "unknown";
+  const oauth2 = createOAuth2Client();
+  oauth2.setCredentials({ refresh_token: config.youtube.refreshToken });
+  const { token } = await oauth2.getAccessToken();
+  if (!token) {
+    throw new Error("Could not refresh YouTube access token.");
+  }
+  return "upload access ready";
 }

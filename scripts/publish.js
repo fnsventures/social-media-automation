@@ -6,13 +6,11 @@ import {
   saveGeneratedPost,
 } from "./lib/content.js";
 import { publishToFacebook, publishToInstagram } from "./lib/meta.js";
-import { publishToTwitter } from "./lib/twitter.js";
 import { publishToYoutube } from "./lib/youtube.js";
 
 const PLATFORM_HANDLERS = {
   facebook: publishToFacebook,
   instagram: publishToInstagram,
-  twitter: publishToTwitter,
   youtube: publishToYoutube,
 };
 

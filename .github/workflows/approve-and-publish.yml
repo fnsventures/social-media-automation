@@ -1,17 +1,19 @@
-name: Publish Social Posts
+name: Approve and Publish
 
 on:
-  schedule:
-    # Every day at 9:00 AM IST (3:30 AM UTC)
-    - cron: "30 3 * * *"
   workflow_dispatch:
     inputs:
       post_id:
-        description: "Optional post id (YAML id field). Leave empty to publish all pending."
-        required: false
+        description: "Post id from the YAML file (required)"
+        required: true
         type: string
       dry_run:
-        description: "Dry run (no actual posting)"
+        description: "Dry run (validate only, no posting)"
+        required: false
+        type: boolean
+        default: true
+      publish:
+        description: "Publish after approval"
         required: false
         type: boolean
         default: false
@@ -20,7 +22,7 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  approve-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +33,21 @@ jobs:
           cache: npm
 
       - name: Install ffmpeg
+        if: inputs.publish == true
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify post before approval
+        run: node scripts/verify-post.js --post "${{ inputs.post_id }}"
+
+      - name: Approve post (review → pending)
+        if: inputs.publish == true
+        run: node scripts/approve-post.js "${{ inputs.post_id }}"
+
       - name: Verify credentials
+        if: inputs.publish == true
         env:
           META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
           META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
@@ -46,7 +57,12 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: node scripts/verify-credentials.js
 
-      - name: Publish pending posts
+      - name: Verify post ready to publish
+        if: inputs.publish == true
+        run: node scripts/verify-post.js --post "${{ inputs.post_id }}" --for-publish
+
+      - name: Publish
+        if: inputs.publish == true
         env:
           META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
           META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
@@ -55,21 +71,13 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
-        run: |
-          ARGS=""
-          if [ -n "${{ inputs.post_id }}" ]; then
-            ARGS="--post ${{ inputs.post_id }}"
-          fi
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            ARGS="$ARGS --dry-run"
-          fi
-          node scripts/publish.js $ARGS
+        run: node scripts/publish.js --post "${{ inputs.post_id }}"
 
-      - name: Commit published post archives
-        if: inputs.dry_run != true
+      - name: Commit changes
+        if: inputs.publish == true && inputs.dry_run != true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add content/posts/ media/
-          git diff --staged --quiet || git commit -m "chore: archive published social posts"
+          git diff --staged --quiet || git commit -m "content: publish ${{ inputs.post_id }}"
           git push

@@ -16,15 +16,15 @@ on:
         required: false
         type: string
       platforms:
-        description: "Comma-separated: facebook,instagram,twitter,youtube"
+        description: "Comma-separated: facebook,instagram,youtube"
         required: false
-        default: "facebook,instagram,twitter"
+        default: "facebook,instagram,youtube"
         type: string
       publish_now:
         description: "Publish immediately after generating"
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -39,6 +39,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install dependencies
         run: npm ci
@@ -73,10 +76,6 @@ jobs:
           META_PAGE_ACCESS_TOKEN: ${{ secrets.META_PAGE_ACCESS_TOKEN }}
           META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
           INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
-          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
-          TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
-          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
-          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
