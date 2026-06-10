@@ -10,27 +10,21 @@
 <body>
   <header>
     <h1>Bishnupriya Fuels — Social Studio</h1>
-    <p>Generate AI content, review it, and publish to Facebook, Instagram, and YouTube.</p>
+    <p>Upload your photo or video, review the post, then publish to Facebook, Instagram, and YouTube.</p>
   </header>
 
   <main>
     <div class="steps">
-      <span class="step active" id="step-1">1. Generate</span>
+      <span class="step active" id="step-1">1. Upload</span>
       <span class="step" id="step-2">2. Review</span>
-      <span class="step" id="step-3">3. Verify</span>
-      <span class="step" id="step-4">4. Publish</span>
+      <span class="step" id="step-3">3. Publish</span>
     </div>
 
-    <section class="card">
-      <h2>GitHub connection</h2>
+    <details class="card settings">
+      <summary>GitHub connection</summary>
       <p class="hint">
-        Create a fine-grained Personal Access Token with <strong>Contents: Read and write</strong>
-        and <strong>Actions: Read and write</strong> for this repository.
-        The token stays in your browser only.
-      </p>
-      <p class="hint">
-        In repo <strong>Settings → Pages</strong>, set source to <strong>GitHub Actions</strong>
-        (not “Deploy from branch”) so AI content commits do not rebuild this dashboard.
+        Personal Access Token with <strong>Contents: Read and write</strong> and
+        <strong>Actions: Read and write</strong>. Stored in this browser only.
       </p>
       <div class="row">
         <div>
@@ -54,55 +48,56 @@
       </div>
       <button class="btn btn-secondary" id="save-config" type="button">Save settings</button>
       <div id="config-status" class="status hidden"></div>
-    </section>
+    </details>
 
-    <section class="card">
-      <h2>1. Generate with AI</h2>
-      <label for="prompt">Prompt / topic</label>
-      <textarea id="prompt" placeholder="e.g. monsoon tyre care tips for highway drivers visiting our BPCL outlet"></textarea>
+    <section class="card" id="upload-section">
+      <h2>1. Upload post</h2>
 
-      <div class="row">
-        <div>
-          <label for="media-type">Media type</label>
-          <select id="media-type">
-            <option value="image">Image only</option>
-            <option value="video">Video only</option>
-            <option value="both">Image + video</option>
-          </select>
-        </div>
-        <div>
-          <label>Platforms</label>
-          <div class="platforms">
-            <label><input type="checkbox" id="platform-facebook" checked /> Facebook</label>
-            <label><input type="checkbox" id="platform-instagram" checked /> Instagram</label>
-            <label><input type="checkbox" id="platform-youtube" checked /> YouTube</label>
-          </div>
-        </div>
+      <label for="title">Title</label>
+      <input id="title" placeholder="e.g. Monsoon tyre care tips" />
+
+      <label for="caption">Caption</label>
+      <textarea id="caption" placeholder="Write your post text. WhatsApp: +91 96689 13299"></textarea>
+
+      <label for="hashtags">Hashtags (comma-separated)</label>
+      <input id="hashtags" placeholder="BishnupriyaFuels, BPCL, Jajpur, Odisha" />
+
+      <label for="media-file">Photo or video (required)</label>
+      <input id="media-file" type="file" accept="image/*,video/*" />
+      <p class="hint">Use JPG/PNG for photos or MP4 for video. Max ~25 MB recommended for GitHub upload.</p>
+
+      <div id="upload-preview" class="preview hidden"></div>
+
+      <label>Platforms</label>
+      <div class="platforms">
+        <label><input type="checkbox" id="platform-facebook" checked /> Facebook</label>
+        <label><input type="checkbox" id="platform-instagram" checked /> Instagram</label>
+        <label><input type="checkbox" id="platform-youtube" checked /> YouTube</label>
       </div>
 
-      <p class="hint">YouTube accepts images too — a short video is auto-created from the image at publish time.</p>
-      <div class="row actions">
-        <button class="btn btn-primary" id="generate-btn" type="button">Generate content</button>
-        <button class="btn btn-secondary" id="reload-btn" type="button">Load last generated</button>
-      </div>
-      <div id="generate-status" class="status"></div>
+      <button class="btn btn-primary" id="review-btn" type="button">Continue to review</button>
+      <div id="upload-status" class="status hidden"></div>
     </section>
 
     <section class="card hidden" id="review-section">
-      <h2>2. Review generated content</h2>
+      <h2>2. Review</h2>
       <div class="preview" id="preview"></div>
-      <button class="btn btn-secondary" id="verify-btn" type="button">Verify content</button>
-      <div id="verify-status" class="status"></div>
+      <div class="actions">
+        <button class="btn btn-secondary" id="back-btn" type="button">Back</button>
+        <button class="btn btn-primary" id="save-btn" type="button">Save to GitHub</button>
+      </div>
+      <div id="review-status" class="status hidden"></div>
     </section>
 
     <section class="card hidden" id="publish-section">
-      <h2>3. Publish to social media</h2>
+      <h2>3. Publish</h2>
+      <p class="hint">Dry run checks everything without posting. Uncheck it to go live.</p>
       <label>
         <input type="checkbox" id="dry-run" checked />
         Dry run first (recommended)
       </label>
-      <button class="btn btn-primary" id="publish-btn" type="button">Approve and publish</button>
-      <div id="publish-status" class="status"></div>
+      <button class="btn btn-primary" id="publish-btn" type="button">Publish to social media</button>
+      <div id="publish-status" class="status hidden"></div>
     </section>
   </main>
 

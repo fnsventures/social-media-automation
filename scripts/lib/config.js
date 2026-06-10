@@ -25,32 +25,11 @@ export const config = {
     pageId: readEnv("META_PAGE_ID"),
     instagramAccountId: readEnv("INSTAGRAM_BUSINESS_ACCOUNT_ID"),
   },
-  twitter: {
-    appKey: readEnv("TWITTER_API_KEY"),
-    appSecret: readEnv("TWITTER_API_SECRET"),
-    accessToken: readEnv("TWITTER_ACCESS_TOKEN"),
-    accessSecret: readEnv("TWITTER_ACCESS_TOKEN_SECRET"),
-  },
   youtube: {
     clientId: readEnv("YOUTUBE_CLIENT_ID"),
     clientSecret: readEnv("YOUTUBE_CLIENT_SECRET"),
     refreshToken: readEnv("YOUTUBE_REFRESH_TOKEN"),
   },
-  gemini: {
-    apiKey: readEnv("GEMINI_API_KEY"),
-    textModel: readEnv("GEMINI_TEXT_MODEL", "gemini-2.0-flash"),
-    imageModel: readEnv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
-  },
-  pollinations: {
-    apiKey: readEnv("POLLINATIONS_API_KEY"),
-    model: readEnv("POLLINATIONS_MODEL", "flux"),
-  },
-  huggingface: {
-    apiKey: readEnv("HF_TOKEN"),
-    imageModel: readEnv("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell"),
-  },
-  generationProvider: readEnv("GENERATION_PROVIDER", "local").toLowerCase(),
-  imageProvider: readEnv("IMAGE_PROVIDER", "").toLowerCase(),
 };
 
 export function resolveMediaPath(relativePath) {
@@ -69,14 +48,6 @@ export function platformConfigured(platform) {
     case "instagram":
       return Boolean(
         config.meta.pageAccessToken && config.meta.instagramAccountId
-      );
-    case "twitter":
-    case "x":
-      return Boolean(
-        config.twitter.appKey &&
-          config.twitter.appSecret &&
-          config.twitter.accessToken &&
-          config.twitter.accessSecret
       );
     case "youtube":
       return Boolean(

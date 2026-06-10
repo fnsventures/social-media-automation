@@ -4,13 +4,9 @@ const DEFAULTS = {
   branch: "master",
 };
 
-const WORKFLOWS = {
-  create: "create-ai-content.yml",
-  publish: "approve-and-publish.yml",
-};
-
+const WORKFLOW_PUBLISH = "approve-and-publish.yml";
 const PLATFORMS = ["facebook", "instagram", "youtube"];
-const SESSION_KEY = "sm-session";
+const SESSION_KEY = "sm-draft";
 
 function loadConfig() {
   const saved = JSON.parse(localStorage.getItem("sm-config") || "{}");
@@ -33,8 +29,33 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function rawUrl(config, filePath) {
-  return `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/${filePath}`;
+function slugify(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+function parseHashtags(value) {
+  return value
+    .split(",")
+    .map((tag) => tag.trim().replace(/^#/, ""))
+    .filter(Boolean);
+}
+
+function fileExtension(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".mp4") || name.endsWith(".mov") || file.type.startsWith("video/")) {
+    return ".mp4";
+  }
+  if (name.endsWith(".png") || file.type === "image/png") return ".png";
+  if (name.endsWith(".webp") || file.type === "image/webp") return ".webp";
+  return ".jpg";
+}
+
+function isVideoFile(file) {
+  return file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name);
 }
 
 async function api(config, path, options = {}) {
@@ -55,10 +76,10 @@ async function api(config, path, options = {}) {
   return response.json();
 }
 
-async function dispatchWorkflow(config, workflowFile, inputs) {
+async function dispatchWorkflow(config, inputs) {
   await api(
     config,
-    `/repos/${config.owner}/${config.repo}/actions/workflows/${workflowFile}/dispatches`,
+    `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_PUBLISH}/dispatches`,
     {
       method: "POST",
       body: JSON.stringify({ ref: config.branch, inputs }),
@@ -66,11 +87,11 @@ async function dispatchWorkflow(config, workflowFile, inputs) {
   );
 }
 
-async function waitForWorkflow(config, workflowFile, startedAfter) {
+async function waitForWorkflow(config, startedAfter) {
   for (let attempt = 0; attempt < 90; attempt += 1) {
     const data = await api(
       config,
-      `/repos/${config.owner}/${config.repo}/actions/workflows/${workflowFile}/runs?per_page=10`
+      `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_PUBLISH}/runs?per_page=10`
     );
 
     const run = data.workflow_runs.find(
@@ -79,87 +100,54 @@ async function waitForWorkflow(config, workflowFile, startedAfter) {
         new Date(entry.created_at) >= startedAfter
     );
 
-    if (run) {
-      if (run.status === "completed") {
-        if (run.conclusion !== "success") {
-          throw new Error(`Workflow failed: ${run.html_url}`);
-        }
-        return run;
+    if (run?.status === "completed") {
+      if (run.conclusion !== "success") {
+        throw new Error(`Publish workflow failed: ${run.html_url}`);
       }
+      return run;
     }
 
     await sleep(4000);
   }
 
-  throw new Error("Timed out waiting for GitHub Actions workflow.");
+  throw new Error("Timed out waiting for publish workflow.");
 }
 
-function decodeBase64Utf8(base64) {
-  const binary = atob(base64.replace(/\s/g, ""));
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder("utf-8").decode(bytes);
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
-async function fetchRepoText(config, filePath) {
-  const data = await api(
+function textToBase64(text) {
+  return btoa(unescape(encodeURIComponent(text)));
+}
+
+async function uploadFile(config, repoPath, base64Content, message) {
+  await api(
     config,
-    `/repos/${config.owner}/${config.repo}/contents/${filePath}?ref=${encodeURIComponent(config.branch)}`
-  );
-
-  if (Array.isArray(data)) {
-    throw new Error(`Expected file: ${filePath}`);
-  }
-
-  return decodeBase64Utf8(data.content);
-}
-
-async function loadGeneratedPost(config, generatedAfter, maxAttempts = 20) {
-  let lastError = null;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    try {
-      const manifest = JSON.parse(
-        await fetchRepoText(config, "content/.last-generated.json")
-      );
-
-      if (generatedAfter && new Date(manifest.created_at) < generatedAfter) {
-        throw new Error("Waiting for updated manifest...");
-      }
-
-      const yamlText = await fetchRepoText(
-        config,
-        `content/posts/${manifest.post_id}.yaml`
-      );
-      const post = window.jsyaml.load(yamlText);
-      return { manifest, post };
-    } catch (error) {
-      lastError = error;
-      await sleep(2000);
+    `/repos/${config.owner}/${config.repo}/contents/${repoPath}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        message,
+        content: base64Content,
+        branch: config.branch,
+      }),
     }
-  }
-
-  throw lastError ?? new Error("Could not load generated post.");
-}
-
-function saveSession(topic, post) {
-  sessionStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify({
-      topic,
-      post,
-      savedAt: new Date().toISOString(),
-    })
   );
 }
 
-function loadSession() {
-  const raw = sessionStorage.getItem(SESSION_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+function getConfigFromForm() {
+  return {
+    token: document.getElementById("github-token").value.trim(),
+    owner: document.getElementById("github-owner").value.trim() || DEFAULTS.owner,
+    repo: document.getElementById("github-repo").value.trim() || DEFAULTS.repo,
+    branch: document.getElementById("github-branch").value.trim() || DEFAULTS.branch,
+  };
 }
 
 function selectedPlatforms() {
@@ -183,46 +171,102 @@ function setStep(step) {
   });
 }
 
-function renderPreview(config, post, topic = "") {
-  const preview = document.getElementById("preview");
-  const tags = (post.hashtags || []).map((tag) => `#${tag}`).join(" ");
-  let mediaHtml = "";
-  const cacheBust = Date.now();
+function saveDraft(draft) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...draft, savedAt: new Date().toISOString() }));
+}
 
-  if (post.media?.image) {
-    mediaHtml += `<img src="${rawUrl(config, post.media.image)}?t=${cacheBust}" alt="Generated image" />`;
-  }
-  if (post.media?.video) {
-    mediaHtml += `<video controls src="${rawUrl(config, post.media.video)}?t=${cacheBust}"></video>`;
-  }
-
-  preview.innerHTML = `
-    <p><strong>Post ID:</strong> <code>${post.id}</code></p>
-    <p><strong>Status:</strong> ${post.status}</p>
-    <p><strong>Platforms:</strong> ${(post.platforms || []).join(", ")}</p>
-    <p><strong>Title:</strong> ${post.title || ""}</p>
-    <pre>${post.caption || ""}${tags ? `\n\n${tags}` : ""}</pre>
-    ${mediaHtml}
-  `;
-
-  document.getElementById("review-section").classList.remove("hidden");
-  setStep(2);
-  currentPost = post;
-  if (topic) {
-    saveSession(topic, post);
+function loadDraft() {
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
-function getConfigFromForm() {
+function buildPostYaml(draft) {
+  const post = {
+    id: draft.id,
+    status: "review",
+    publish_at: "",
+    platforms: draft.platforms,
+    title: draft.title,
+    caption: draft.caption,
+    hashtags: draft.hashtags,
+    media: {},
+    created_at: new Date().toISOString(),
+  };
+
+  if (draft.mediaType === "video") {
+    post.media.video = draft.mediaPath;
+  } else {
+    post.media.image = draft.mediaPath;
+  }
+
+  return window.jsyaml.dump(post, { lineWidth: 120 });
+}
+
+function renderPreview(container, draft, mediaUrl) {
+  const tags = draft.hashtags.map((tag) => `#${tag}`).join(" ");
+  let mediaHtml = "";
+
+  if (draft.mediaType === "video") {
+    mediaHtml = `<video controls src="${mediaUrl}"></video>`;
+  } else {
+    mediaHtml = `<img src="${mediaUrl}" alt="Post media" />`;
+  }
+
+  container.innerHTML = `
+    <p><strong>Post ID:</strong> <code>${draft.id}</code></p>
+    <p><strong>Platforms:</strong> ${draft.platforms.join(", ")}</p>
+    <p><strong>Title:</strong> ${draft.title}</p>
+    <pre>${draft.caption}${tags ? `\n\n${tags}` : ""}</pre>
+    ${mediaHtml}
+  `;
+}
+
+function validateDraftInput() {
+  const title = document.getElementById("title").value.trim();
+  const caption = document.getElementById("caption").value.trim();
+  const fileInput = document.getElementById("media-file");
+  const platforms = selectedPlatforms();
+  const file = fileInput.files?.[0];
+
+  if (!title) throw new Error("Enter a title.");
+  if (!caption) throw new Error("Enter a caption.");
+  if (!file) throw new Error("Choose a photo or video to upload.");
+  if (platforms.length === 0) throw new Error("Select at least one platform.");
+  if (file.size > 25 * 1024 * 1024) {
+    throw new Error("File is larger than 25 MB. Use a smaller file.");
+  }
+
+  const id = `${slugify(title)}-${Date.now()}`;
+  const ext = fileExtension(file);
+  const mediaType = isVideoFile(file) ? "video" : "image";
+
   return {
-    token: document.getElementById("github-token").value.trim(),
-    owner: document.getElementById("github-owner").value.trim() || DEFAULTS.owner,
-    repo: document.getElementById("github-repo").value.trim() || DEFAULTS.repo,
-    branch: document.getElementById("github-branch").value.trim() || DEFAULTS.branch,
+    id,
+    title,
+    caption,
+    hashtags: parseHashtags(document.getElementById("hashtags").value),
+    platforms,
+    file,
+    mediaType,
+    mediaPath: `media/${id}${ext}`,
+    saved: false,
   };
 }
 
-let currentPost = null;
+let draft = null;
+let previewUrl = null;
+
+function revokePreviewUrl() {
+  if (previewUrl) {
+    URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+  }
+}
 
 document.getElementById("save-config").addEventListener("click", () => {
   const config = getConfigFromForm();
@@ -234,174 +278,117 @@ document.getElementById("save-config").addEventListener("click", () => {
   setStatus("config-status", "Settings saved in this browser.", "ok");
 });
 
-document.getElementById("generate-btn").addEventListener("click", async () => {
-  const config = getConfigFromForm();
-  if (!config.token) {
-    setStatus("generate-status", "Save your GitHub token first.", "error");
+document.getElementById("media-file").addEventListener("change", () => {
+  const file = document.getElementById("media-file").files?.[0];
+  const preview = document.getElementById("upload-preview");
+  revokePreviewUrl();
+
+  if (!file) {
+    preview.classList.add("hidden");
+    preview.innerHTML = "";
     return;
   }
 
-  const topic = document.getElementById("prompt").value.trim();
-  if (!topic) {
-    setStatus("generate-status", "Enter a prompt/topic first.", "error");
-    return;
+  previewUrl = URL.createObjectURL(file);
+  preview.classList.remove("hidden");
+  if (isVideoFile(file)) {
+    preview.innerHTML = `<video controls src="${previewUrl}"></video>`;
+  } else {
+    preview.innerHTML = `<img src="${previewUrl}" alt="Selected media" />`;
   }
+});
 
-  const mediaType = document.getElementById("media-type").value;
-  const platforms = selectedPlatforms();
-  if (platforms.length === 0) {
-    setStatus("generate-status", "Select at least one platform.", "error");
-    return;
+document.getElementById("review-btn").addEventListener("click", () => {
+  try {
+    draft = validateDraftInput();
+    revokePreviewUrl();
+    previewUrl = URL.createObjectURL(draft.file);
+    renderPreview(document.getElementById("preview"), draft, previewUrl);
+    document.getElementById("review-section").classList.remove("hidden");
+    document.getElementById("publish-section").classList.add("hidden");
+    setStep(2);
+    setStatus("review-status", "Check everything looks correct, then save to GitHub.", "ok");
+  } catch (error) {
+    setStatus("upload-status", error.message, "error");
   }
+});
 
-  const btn = document.getElementById("generate-btn");
-  btn.disabled = true;
-  setStatus("generate-status", "Starting AI generation workflow...");
+document.getElementById("back-btn").addEventListener("click", () => {
+  document.getElementById("review-section").classList.add("hidden");
+  document.getElementById("publish-section").classList.add("hidden");
   setStep(1);
-
-  try {
-    const startedAt = new Date();
-    await dispatchWorkflow(config, WORKFLOWS.create, {
-      topic,
-      media_type: mediaType,
-      platforms: platforms.join(","),
-    });
-
-    setStatus(
-      "generate-status",
-      "Generating caption and media on GitHub Actions (ignore any Pages deployment — that is separate)..."
-    );
-    await waitForWorkflow(config, WORKFLOWS.create, startedAt);
-
-    setStatus("generate-status", "Loading generated post from repository...");
-    const { post } = await loadGeneratedPost(config, startedAt);
-    renderPreview(config, post, topic);
-    setStatus(
-      "generate-status",
-      "Content generated. Review below, then verify and publish.",
-      "ok"
-    );
-  } catch (error) {
-    setStatus("generate-status", error.message, "error");
-  } finally {
-    btn.disabled = false;
-  }
 });
 
-document.getElementById("reload-btn").addEventListener("click", async () => {
+document.getElementById("save-btn").addEventListener("click", async () => {
   const config = getConfigFromForm();
   if (!config.token) {
-    setStatus("generate-status", "Save your GitHub token first.", "error");
+    setStatus("review-status", "Save your GitHub token first.", "error");
+    return;
+  }
+  if (!draft) {
+    setStatus("review-status", "Nothing to save.", "error");
     return;
   }
 
-  const btn = document.getElementById("reload-btn");
+  const btn = document.getElementById("save-btn");
   btn.disabled = true;
-  setStatus("generate-status", "Loading latest generated post...");
+  setStatus("review-status", "Uploading media and post to GitHub...");
 
   try {
-    const { post, manifest } = await loadGeneratedPost(config);
-    const topic = manifest.topic || post.topic || "";
-    if (topic) {
-      document.getElementById("prompt").value = topic;
-    }
-    renderPreview(config, post, topic);
-    setStatus(
-      "generate-status",
-      "Loaded latest generated post. Review below, then verify and publish.",
-      "ok"
+    const mediaBase64 = await fileToBase64(draft.file);
+    await uploadFile(
+      config,
+      draft.mediaPath,
+      mediaBase64,
+      `content: upload media for ${draft.id}`
     );
+
+    const yaml = buildPostYaml(draft);
+    await uploadFile(
+      config,
+      `content/posts/${draft.id}.yaml`,
+      textToBase64(yaml),
+      `content: draft post ${draft.id}`
+    );
+
+    draft.saved = true;
+    saveDraft({ ...draft, fileName: draft.file.name, file: null });
+
+    document.getElementById("publish-section").classList.remove("hidden");
+    setStep(3);
+    setStatus("review-status", "Saved to GitHub. Ready to publish.", "ok");
   } catch (error) {
-    setStatus("generate-status", error.message, "error");
+    setStatus("review-status", error.message, "error");
   } finally {
     btn.disabled = false;
   }
-});
-
-document.getElementById("verify-btn").addEventListener("click", () => {
-  if (!currentPost) {
-    setStatus("verify-status", "Generate content first.", "error");
-    return;
-  }
-
-  const errors = [];
-  const warnings = [];
-
-  if (!currentPost.caption) errors.push("Missing caption.");
-  if (!(currentPost.platforms || []).length) errors.push("No platforms selected.");
-  if (
-    currentPost.platforms.includes("instagram") &&
-    !currentPost.media?.image &&
-    !currentPost.media?.video
-  ) {
-    errors.push("Instagram needs an image or video.");
-  }
-  if (
-    currentPost.platforms.includes("youtube") &&
-    !currentPost.media?.image &&
-    !currentPost.media?.video
-  ) {
-    errors.push("YouTube needs an image or video.");
-  }
-  if (
-    currentPost.platforms.includes("youtube") &&
-    currentPost.media?.image &&
-    !currentPost.media?.video
-  ) {
-    warnings.push("YouTube will auto-create a short video from the image.");
-  }
-  if (currentPost.status !== "review") {
-    warnings.push(`Status is "${currentPost.status}" (expected review).`);
-  }
-
-  const lines = [];
-  warnings.forEach((line) => lines.push(`WARN: ${line}`));
-  errors.forEach((line) => lines.push(`ERROR: ${line}`));
-
-  if (errors.length) {
-    setStatus("verify-status", lines.join("\n"), "error");
-    return;
-  }
-
-  setStatus(
-    "verify-status",
-    `${lines.join("\n")}${lines.length ? "\n\n" : ""}Verification passed. Ready to publish.`,
-    "ok"
-  );
-  setStep(3);
-  document.getElementById("publish-section").classList.remove("hidden");
 });
 
 document.getElementById("publish-btn").addEventListener("click", async () => {
   const config = getConfigFromForm();
-  if (!currentPost) {
-    setStatus("publish-status", "Nothing to publish.", "error");
+  if (!draft?.saved) {
+    setStatus("publish-status", "Save to GitHub first.", "error");
     return;
   }
 
   const dryRun = document.getElementById("dry-run").checked;
   const btn = document.getElementById("publish-btn");
   btn.disabled = true;
-  setStatus(
-    "publish-status",
-    dryRun ? "Running dry-run publish..." : "Approving and publishing..."
-  );
+  setStatus("publish-status", dryRun ? "Running dry run..." : "Publishing...");
 
   try {
     const startedAt = new Date();
-    await dispatchWorkflow(config, WORKFLOWS.publish, {
-      post_id: currentPost.id,
-      dry_run: String(dryRun),
-      publish: "true",
+    await dispatchWorkflow(config, {
+      post_id: draft.id,
+      dry_run: dryRun,
+      publish: true,
     });
-
-    await waitForWorkflow(config, WORKFLOWS.publish, startedAt);
-    setStep(4);
+    await waitForWorkflow(config, startedAt);
     setStatus(
       "publish-status",
       dryRun
-        ? "Dry run completed. Uncheck dry run and publish again to go live."
-        : "Published to Facebook, Instagram, and YouTube.",
+        ? "Dry run passed. Uncheck dry run and publish again to go live."
+        : "Published to your selected platforms.",
       "ok"
     );
   } catch (error) {
@@ -420,17 +407,23 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("github-token").value = config.token;
   }
 
-  const session = loadSession();
-  if (session?.post) {
-    currentPost = session.post;
-    if (session.topic) {
-      document.getElementById("prompt").value = session.topic;
-    }
-    renderPreview(config, session.post);
-    setStatus(
-      "generate-status",
-      "Restored your last generated post from this browser session.",
-      "ok"
+  const saved = loadDraft();
+  if (saved?.saved) {
+    draft = saved;
+    document.getElementById("title").value = saved.title || "";
+    document.getElementById("caption").value = saved.caption || "";
+    document.getElementById("hashtags").value = (saved.hashtags || []).join(", ");
+    PLATFORMS.forEach((platform) => {
+      document.getElementById(`platform-${platform}`).checked = (saved.platforms || []).includes(platform);
+    });
+    renderPreview(
+      document.getElementById("preview"),
+      saved,
+      `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/${saved.mediaPath}?t=${Date.now()}`
     );
+    document.getElementById("review-section").classList.remove("hidden");
+    document.getElementById("publish-section").classList.remove("hidden");
+    setStep(3);
+    setStatus("review-status", `Restored saved post "${saved.id}". You can publish again.`, "ok");
   }
 });

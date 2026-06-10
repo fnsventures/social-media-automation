@@ -1,230 +1,50 @@
 # Social Media Automation
 
-Cross-post content to **Facebook**, **Instagram**, **X (Twitter)**, and **YouTube** from one place using GitHub Actions.
+Cross-post content to **Facebook**, **Instagram**, and **YouTube** from one web dashboard.
 
-Built for [Bishnupriya Fuels](https://github.com/) (BPCL outlet, Jajpur) but works for any business.
+Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL outlet, Jajpur).
 
 ## How it works
 
-```mermaid
-flowchart LR
-  A[Write YAML post or AI generate] --> B[GitHub Actions workflow]
-  B --> C[Publish script]
-  C --> D[Facebook]
-  C --> E[Instagram]
-  C --> F[X / Twitter]
-  C --> G[YouTube]
-```
+1. Open **Social Studio** (GitHub Pages dashboard).
+2. **Upload** your photo/video and write the caption.
+3. **Review** the post, then **Save to GitHub**.
+4. **Publish** to Facebook, Instagram, and YouTube (dry run first).
 
-1. You add a post file under `content/posts/` (or run the AI workflow).
-2. GitHub Actions runs on a schedule (daily 9 AM IST) or manually.
-3. The script posts the same caption/media to every configured platform.
-4. Published posts are archived as `*.published.yaml`.
+Dashboard URL: `https://<owner>.github.io/social-media-automation/`
 
-## Quick start
+## GitHub Secrets
 
-### 1. Create a new GitHub repository
+| Secret | Platform |
+|--------|----------|
+| `META_PAGE_ACCESS_TOKEN` | Facebook + Instagram |
+| `META_PAGE_ID` | Facebook |
+| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram |
+| `YOUTUBE_CLIENT_ID` | YouTube |
+| `YOUTUBE_CLIENT_SECRET` | YouTube |
+| `YOUTUBE_REFRESH_TOKEN` | YouTube |
 
-```bash
-cd social-media-automation
-git init
-git add .
-git commit -m "Initial commit: social media automation"
-gh repo create bishnupriya-social --public --source=. --push
-```
-
-Or push this folder to its own repo on GitHub.
-
-### 2. Add account credentials as GitHub Secrets
-
-Go to **Repository → Settings → Secrets and variables → Actions → New repository secret**.
-
-| Secret | Platform | Required for |
-|--------|----------|--------------|
-| `META_PAGE_ACCESS_TOKEN` | Facebook + Instagram | Page posts, IG media |
-| `META_PAGE_ID` | Facebook | Page ID |
-| `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram | Business/Creator account |
-| `TWITTER_API_KEY` | X | App key |
-| `TWITTER_API_SECRET` | X | App secret |
-| `TWITTER_ACCESS_TOKEN` | X | User token |
-| `TWITTER_ACCESS_TOKEN_SECRET` | X | User token secret |
-| `YOUTUBE_CLIENT_ID` | YouTube | OAuth client |
-| `YOUTUBE_CLIENT_SECRET` | YouTube | OAuth client |
-| `YOUTUBE_REFRESH_TOKEN` | YouTube | Long-lived upload token |
-| `GEMINI_API_KEY` | AI generation (Gemini) | Optional |
-
-Never commit tokens to the repo. Use GitHub Secrets only.
-
-### 3. Create your first post
-
-Copy `content/posts/example.yaml`:
-
-```yaml
-id: monday-tip-001
-status: pending
-publish_at: ""   # empty = publish on next workflow run
-platforms:
-  - facebook
-  - instagram
-  - twitter
-  - youtube
-
-title: Tyre care before monsoon drives
-caption: |
-  Before the rains, check tyre tread and pressure at Bishnupriya Fuels.
-  We are on your route at Padmalavpur, Manduka, Jajpur.
-
-  WhatsApp fleet inquiries: +91 96689 13299
-
-hashtags:
-  - BishnupriyaFuels
-  - BPCL
-  - Jajpur
-
-media:
-  image: media/forecourt.jpg   # required for Instagram
-  video: media/tour.mp4        # required for YouTube
-```
-
-Add your photo/video under `media/`, commit, and push.
-
-### 4. Run the workflow
-
-**Actions → Publish Social Posts → Run workflow**
-
-Use **dry run** first to validate without posting.
-
----
-
-## Platform setup guides
-
-### Facebook + Instagram (Meta)
-
-1. Create a [Meta Developer](https://developers.facebook.com/) app.
-2. Add products: **Facebook Login**, **Instagram Graph API**.
-3. Connect your **Facebook Business Page** to the app.
-4. Convert Instagram to a **Business** or **Creator** account linked to that Page.
-5. Generate a **Page Access Token** with permissions:
-   - `pages_manage_posts`
-   - `pages_read_engagement`
-   - `instagram_basic`
-   - `instagram_content_publish`
-6. Find IDs:
-   - Page ID: Page → About → Page transparency, or Graph API Explorer `me/accounts`
-   - Instagram Business Account ID: `/{page-id}?fields=instagram_business_account`
-
-### X (Twitter)
-
-1. Apply at [developer.x.com](https://developer.x.com/).
-2. Create a project + app with **Read and Write** permissions.
-3. Generate **Access Token and Secret** for your account.
-4. Add all four keys to GitHub Secrets.
-
-Free tier limits apply; check current X API pricing.
-
-### YouTube
-
-1. Create a project in [Google Cloud Console](https://console.cloud.google.com/).
-2. Enable **YouTube Data API v3**.
-3. Create **OAuth 2.0 Desktop** credentials.
-4. Run the one-time OAuth flow locally to get a refresh token:
-
-```bash
-cp .env.example .env
-# fill YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET
-
-npm install
-node scripts/setup-youtube-oauth.js
-```
-
-5. Copy the printed refresh token to GitHub Secret `YOUTUBE_REFRESH_TOKEN`.
-
-YouTube posts require `media.video` in the YAML file.
-
----
+For the dashboard, use a GitHub PAT with **Contents** and **Actions** read/write (browser only, not stored in the repo).
 
 ## Workflows
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| **Publish Social Posts** | Daily 9 AM IST + manual | Publishes all `status: pending` posts |
-| **Generate and Publish** | Manual | AI writes caption from a topic, optional publish |
+| Workflow | Purpose |
+|----------|---------|
+| **Approve and Publish** | Triggered from Social Studio — verify, approve, publish |
+| **Publish Social Posts** | Daily schedule for `status: pending` posts |
+| **Deploy Social Studio** | Updates the web dashboard when `docs/` changes |
 
-### Manual publish options
-
-- **post_id**: publish one specific post
-- **dry_run**: test without posting
-
-### AI generate options
-
-- **topic**: what to write about
-- **image_path** / **video_path**: attach repo media
-- **platforms**: comma-separated list
-- **publish_now**: post immediately after generation
-
----
-
-## Local development
+## Local CLI
 
 ```bash
 npm install
 cp .env.example .env
-# fill credentials in .env
-
-npm run verify          # check which platforms are configured
-npm run publish:dry-run # test pending posts
-npm run publish         # publish for real
-npm run generate -- "fleet diesel services in Jajpur"
+npm run verify
+npm run verify:post -- --post your-post-id
+npm run approve:post -- your-post-id
+npm run publish:dry-run -- --post your-post-id
+npm run publish -- --post your-post-id
 ```
-
----
-
-## Content rules
-
-| Platform | Text | Image | Video |
-|----------|------|-------|-------|
-| Facebook | Yes | Optional | Optional |
-| Instagram | Caption | **Required** (or video) | Reels supported |
-| X | Yes (280 chars, auto-truncated) | Optional | Optional |
-| YouTube | Description | Thumbnail auto | **Required** |
-
-The same caption is reused everywhere. YouTube also uses the `title` field.
-
----
-
-## Scheduling posts
-
-Set `publish_at` in ISO format with timezone:
-
-```yaml
-publish_at: "2026-06-15T09:00:00+05:30"
-status: pending
-```
-
-The daily workflow publishes posts whose time has passed.
-
----
-
-## Security notes
-
-- Credentials live in GitHub Secrets, not in code.
-- Use a dedicated Meta/X/Google app for this repo.
-- Rotate tokens if leaked.
-- Review AI-generated text before enabling auto-publish in production.
-
----
-
-## Troubleshooting
-
-| Error | Fix |
-|-------|-----|
-| Instagram requires image | Add `media.image` or `media.video` |
-| YouTube requires video | Add `media.video` and enable `youtube` platform |
-| Meta token expired | Regenerate Page Access Token; long-lived tokens last ~60 days |
-| X 403 Forbidden | Check app has Write permission and tokens match the app |
-| Workflow cannot push | Enable **Read and write** permissions for Actions in repo settings |
-
----
 
 ## License
 

@@ -223,6 +223,21 @@ footer {
   padding: 1rem;
 }
 
+input[type="file"] {
+  padding: 0.5rem;
+  background: #f8f9fa;
+}
+
+.settings summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.settings[open] summary {
+  margin-bottom: 1rem;
+}
+
 .hidden {
   display: none;
 }
