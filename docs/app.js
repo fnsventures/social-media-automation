@@ -94,6 +94,12 @@ async function waitForWorkflow(config, workflowFile, startedAfter) {
   throw new Error("Timed out waiting for GitHub Actions workflow.");
 }
 
+function decodeBase64Utf8(base64) {
+  const binary = atob(base64.replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
 async function fetchRepoText(config, filePath) {
   const data = await api(
     config,
@@ -104,7 +110,7 @@ async function fetchRepoText(config, filePath) {
     throw new Error(`Expected file: ${filePath}`);
   }
 
-  return atob(data.content.replace(/\n/g, ""));
+  return decodeBase64Utf8(data.content);
 }
 
 async function loadGeneratedPost(config, generatedAfter, maxAttempts = 20) {
