@@ -1,0 +1,32 @@
+# Copy this file, rename (e.g. monday-tip.yaml), set status: pending, and commit.
+# GitHub Actions publishes posts when publish_at is due (or leave publish_at empty for immediate).
+
+id: example-welcome
+status: draft
+publish_at: ""
+platforms:
+  - facebook
+  - instagram
+  - twitter
+  # - youtube   # enable when video is attached
+
+title: Bishnupriya Fuels — Trusted fuel stop
+caption: |
+  Welcome to Bishnupriya Fuels, your Bharat Petroleum outlet in Padmalavpur, Manduka, Jajpur.
+
+  ✓ Clean forecourt & quick service
+  ✓ Petrol, diesel & lubricants
+  ✓ Fleet fueling support
+
+  WhatsApp: +91 96689 13299
+
+hashtags:
+  - BishnupriyaFuels
+  - BPCL
+  - Jajpur
+  - Odisha
+
+media:
+  # Add files under media/ and uncomment paths before publishing.
+  # image: media/forecourt.jpg
+  # video: media/station-tour.mp4

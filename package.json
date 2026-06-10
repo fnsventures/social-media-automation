@@ -1,0 +1,20 @@
+{
+  "name": "social-media-automation",
+  "version": "1.0.0",
+  "description": "Cross-post content to Facebook, Instagram, X, and YouTube via GitHub Actions",
+  "type": "module",
+  "scripts": {
+    "publish": "node scripts/publish.js",
+    "publish:dry-run": "DRY_RUN=true node scripts/publish.js",
+    "generate": "node scripts/generate-content.js",
+    "verify": "node scripts/verify-credentials.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "js-yaml": "^4.1.0",
+    "twitter-api-v2": "^1.19.0"
+  }
+}
