@@ -21,7 +21,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "@whiskeysockets/baileys": "6.7.23",
     "googleapis": "^144.0.0",
     "js-yaml": "^4.1.0",
     "pino": "^10.3.1",
