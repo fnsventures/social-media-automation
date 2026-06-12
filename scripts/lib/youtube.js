@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { google } from "googleapis";
 import { config, ROOT } from "./config.js";
-import { createVideoFromImage } from "./ffmpeg-video.js";
+import { createVideoFromImage, enhanceVideoWithMusic } from "./ffmpeg-video.js";
 import {
   publishImageCommunityPost,
   verifyYoutubeCommunitySetup,
@@ -30,14 +30,19 @@ function guessVideoMime(filePath) {
 }
 
 function resolveVideoPath(post) {
-  if (post.videoPath) return post.videoPath;
+  const relativeVideo = `media/.generated/${post.id}-youtube.mp4`;
+
+  if (post.videoPath) {
+    const relativeInput = path.relative(ROOT, post.videoPath);
+    enhanceVideoWithMusic(relativeInput, relativeVideo);
+    return path.resolve(ROOT, relativeVideo);
+  }
 
   if (!post.imagePath) {
     throw new Error("YouTube requires media.image or media.video.");
   }
 
   const relativeImage = path.relative(ROOT, post.imagePath);
-  const relativeVideo = `media/.generated/${post.id}-youtube.mp4`;
   createVideoFromImage(relativeImage, relativeVideo);
   return path.resolve(ROOT, relativeVideo);
 }

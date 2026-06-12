@@ -11,7 +11,7 @@ Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL ou
 - **Review workflow** — posts go through `review` → `pending` → `published` before going live
 - **Dry run** — validate credentials and media without posting
 - **Scheduled publishing** — GitHub Actions runs daily for due `pending` posts
-- **Image-to-video** — when only an image is provided and Community cookies are not set, YouTube gets an auto-generated short clip (requires ffmpeg)
+- **Image-to-video** — when only an image is provided and Community cookies are not set, YouTube gets an auto-generated 16:9 clip with Ken Burns motion, subtle color grading, and royalty-free background music (requires ffmpeg)
 - **YouTube Community** — image posts can go to the Community tab when cookies are configured
 - **Google Business** — image updates to your Business Profile listing via the official API
 

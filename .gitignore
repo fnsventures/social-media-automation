@@ -3,6 +3,7 @@ node_modules/
 .env.local
 *.log
 .DS_Store
+media/.generated/
 content/posts/*.published.yaml
 whatsapp-auth/
 whatsapp-setup-qr.html
