@@ -2,6 +2,10 @@
 /**
  * One-time WhatsApp setup: link the business phone → auth saved to whatsapp-auth/.
  *
+ * Prerequisites:
+ * 1. Set WHATSAPP_BUSINESS_NUMBER in .env (country code, no +)
+ *    Example: 919668913299 for +91 96689 13299
+ *
  * Usage:
  *   npm run setup:whatsapp              # pairing code (recommended)
  *   npm run setup:whatsapp -- --qr      # QR code instead
@@ -27,6 +31,7 @@ import { ROOT } from "./lib/config.js";
 loadEnvFile();
 
 const AUTH_DIR = path.join(ROOT, "whatsapp-auth");
+const QR_HTML_PATH = path.join(ROOT, "whatsapp-setup-qr.html");
 const SETUP_TIMEOUT_MS = 5 * 60_000;
 
 function readEnv(name) {
@@ -44,6 +49,53 @@ function wipeAuthDir() {
   if (fs.existsSync(AUTH_DIR)) {
     fs.rmSync(AUTH_DIR, { recursive: true, force: true });
   }
+}
+
+function printLinkingInstructions(setupMethod) {
+  console.log("IMPORTANT — do NOT use Business Tools → Short link");
+  console.log("Short link QR is for customers to message you. It will NOT link this setup.\n");
+  console.log("Use Linked devices instead:\n");
+  console.log("Android (WhatsApp Business):");
+  console.log("  ⋮ (top-right) → Linked devices → Link a device");
+  if (setupMethod === "pairing") {
+    console.log("  → tap Link with phone number instead → enter the 8-digit code below\n");
+  } else {
+    console.log("  → scan the QR code in this terminal or open whatsapp-setup-qr.html\n");
+  }
+  console.log("iPhone (WhatsApp Business):");
+  console.log("  Settings → Linked devices → Link a device");
+  if (setupMethod === "pairing") {
+    console.log("  → Link with phone number instead → enter the 8-digit code below\n");
+  } else {
+    console.log("  → scan the QR code in this terminal or open whatsapp-setup-qr.html\n");
+  }
+}
+
+function writeQrHtml(qr) {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WhatsApp Setup QR</title>
+  <style>
+    body { font-family: system-ui, sans-serif; text-align: center; padding: 2rem; }
+    canvas { margin: 1rem auto; }
+    p { max-width: 32rem; margin: 0.5rem auto; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Scan with WhatsApp Business</h1>
+  <p>Linked devices → Link a device. Do <strong>not</strong> use Business Tools → Short link.</p>
+  <canvas id="qr"></canvas>
+  <p>QR refreshes if this page fails — re-run <code>npm run setup:whatsapp</code>.</p>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1/build/qrcode.min.js"></script>
+  <script>
+    QRCode.toCanvas(document.getElementById("qr"), ${JSON.stringify(qr)}, { width: 360, margin: 2 });
+  </script>
+</body>
+</html>
+`;
+  fs.writeFileSync(QR_HTML_PATH, html, "utf8");
 }
 
 async function linkBusinessAccount(businessNumber, { useQr }) {
@@ -104,9 +156,11 @@ async function linkBusinessAccount(businessNumber, { useQr }) {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr && useQr) {
-          console.log("\nScan this QR code on +91 96689 13299:\n");
-          qrcode.generate(qr, { small: true });
-          console.log("\nWhatsApp → Settings → Linked devices → Link a device\n");
+          writeQrHtml(qr);
+          console.log("\nScan this QR code with your business phone:\n");
+          qrcode.generate(qr, { small: false });
+          console.log(`\nOr open a larger QR in your browser:\n  open ${QR_HTML_PATH}\n`);
+          printLinkingInstructions("qr");
         }
 
         if (connection === "open") {
@@ -150,14 +204,14 @@ async function linkBusinessAccount(businessNumber, { useQr }) {
         pairingCodeSent = true;
         console.log("Connecting to WhatsApp...");
         await sock.waitForSocketOpen();
+        printLinkingInstructions("pairing");
         const code = await sock.requestPairingCode(businessNumber);
         console.log("\nEnter this pairing code on your business phone:\n");
         console.log(`  ${formatPairingCode(code)}\n`);
-        console.log("WhatsApp → Settings → Linked devices");
-        console.log("→ Link a device → Link with phone number instead\n");
         console.log("Waiting for confirmation on the phone...\n");
       } else if (useQr && !state.creds.registered) {
         console.log("Connecting to WhatsApp... (waiting for QR)\n");
+        printLinkingInstructions("qr");
       } else if (state.creds.registered) {
         console.log("Restoring saved session...\n");
       }

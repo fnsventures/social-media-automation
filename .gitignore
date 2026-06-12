@@ -5,4 +5,5 @@ node_modules/
 .DS_Store
 content/posts/*.published.yaml
 whatsapp-auth/
+whatsapp-setup-qr.html
 youtube-cookies.json
