@@ -1,17 +1,19 @@
 # Social Media Automation
 
-Cross-post content to **Facebook**, **Instagram**, and **YouTube** from a web dashboard or the command line.
+Cross-post content to **Facebook**, **Instagram**, **YouTube**, **WhatsApp Status**, and **Google Business** from a web dashboard or the command line.
 
 Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL outlet, Jajpur).
 
 ## Features
 
 - **Social Studio** — browser dashboard on GitHub Pages to upload media, write captions, and publish
-- **Multi-platform publishing** — one post YAML drives Facebook, Instagram, and YouTube
+- **Multi-platform publishing** — one post YAML drives Facebook, Instagram, YouTube, WhatsApp Status, and Google Business
 - **Review workflow** — posts go through `review` → `pending` → `published` before going live
 - **Dry run** — validate credentials and media without posting
 - **Scheduled publishing** — GitHub Actions runs daily for due `pending` posts
-- **Image-to-video** — when only an image is provided, YouTube gets an auto-generated short clip (requires ffmpeg)
+- **Image-to-video** — when only an image is provided and Community cookies are not set, YouTube gets an auto-generated short clip (requires ffmpeg)
+- **YouTube Community** — image posts can go to the Community tab when cookies are configured
+- **Google Business** — image updates to your Business Profile listing via the official API
 
 ## How it works
 
@@ -24,7 +26,7 @@ Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL ou
                                                             │
                               ┌─────────────────────────────┼─────────────────────────────┐
                               ▼                             ▼                             ▼
-                         Facebook                      Instagram                        YouTube
+                         Facebook                      Instagram                        YouTube                    WhatsApp Status
 ```
 
 ### Post lifecycle
@@ -46,6 +48,21 @@ Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL ou
 
 Live dashboard: [privatefnsventures-maker.github.io/social-media-automation](https://privatefnsventures-maker.github.io/social-media-automation/)
 
+### Full media upload guide
+
+For a detailed, newcomer-friendly walkthrough — including step-by-step upload instructions, media requirements, and how to fix expired tokens — see:
+
+**[docs/MEDIA_UPLOAD_GUIDE.md](docs/MEDIA_UPLOAD_GUIDE.md)**
+
+Topics covered:
+
+- Connecting Social Studio to GitHub
+- Uploading photos and videos (drag-and-drop workflow)
+- Dry run vs live publish
+- Where every credential is stored (browser, `.env`, GitHub Secrets)
+- Renewing expired tokens for GitHub, Meta, YouTube, WhatsApp, and Google Business
+- Reading GitHub Actions logs when something fails
+
 ## Project structure
 
 ```
@@ -60,6 +77,9 @@ scripts/
   verify-credentials.js Check platform secrets
   setup-meta-oauth.js   One-time Meta (Facebook + Instagram) OAuth setup
   setup-youtube-oauth.js One-time YouTube OAuth setup
+  setup-youtube-cookies.js One-time YouTube Community image post setup
+  setup-google-business-oauth.js One-time Google Business Profile OAuth setup
+  setup-whatsapp.js     One-time WhatsApp Status QR setup
   lib/                  Platform clients and shared utilities
 .github/workflows/
   approve-and-publish.yml  Triggered from Social Studio
@@ -84,7 +104,18 @@ Add these under **Settings → Secrets and variables → Actions**:
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram | Posting |
 | `YOUTUBE_CLIENT_ID` | YouTube | Posting |
 | `YOUTUBE_CLIENT_SECRET` | YouTube | Posting |
-| `YOUTUBE_REFRESH_TOKEN` | YouTube | Posting |
+| `YOUTUBE_REFRESH_TOKEN` | YouTube | Video uploads |
+| `YOUTUBE_CHANNEL_ID` | YouTube Community | Image posts to Community tab |
+| `YOUTUBE_COOKIES_JSON` | YouTube Community | Browser session cookies (JSON array) |
+| `WHATSAPP_AUTH_B64` | WhatsApp Status | Posting (base64 auth archive from setup) |
+| `WHATSAPP_BUSINESS_NUMBER` | WhatsApp Status | Posting (business phone, country code, no `+`, e.g. `919668913299`) |
+| `WHATSAPP_STATUS_AUDIENCE` | WhatsApp Status | `all_contacts` (default) or `contacts` for a custom list |
+| `WHATSAPP_STATUS_CONTACTS` | WhatsApp Status | Optional viewers when `WHATSAPP_STATUS_AUDIENCE=contacts` |
+| `GOOGLE_BUSINESS_CLIENT_ID` | Google Business | Posting |
+| `GOOGLE_BUSINESS_CLIENT_SECRET` | Google Business | Posting |
+| `GOOGLE_BUSINESS_REFRESH_TOKEN` | Google Business | Posting |
+| `GOOGLE_BUSINESS_LOCATION_NAME` | Google Business | Posting (`accounts/.../locations/...`) |
+| `GOOGLE_BUSINESS_MEDIA_BASE_URL` | Google Business | Image posts (public URL prefix for `media/` files) |
 
 For Social Studio in the browser, create a [GitHub PAT](https://github.com/settings/tokens) with **Contents: Read and write** and **Actions: Read and write**. Enter it in the dashboard — it is never stored in the repo.
 
@@ -110,7 +141,35 @@ npm run verify
 
 1. Create OAuth credentials at [console.cloud.google.com](https://console.cloud.google.com/) (enable YouTube Data API v3)
 2. Add `YOUTUBE_CLIENT_ID` and `YOUTUBE_CLIENT_SECRET` to `.env`
-3. Run `npm run setup:youtube` — saves refresh token
+3. Run `npm run setup:youtube` — saves refresh token (for video uploads)
+
+**YouTube Community (image posts)**
+
+1. Export YouTube cookies while logged in (Cookie-Editor browser extension)
+2. Run `npm run setup:youtube-cookies` — saves channel ID and cookies
+3. Add `YOUTUBE_CHANNEL_ID` and `YOUTUBE_COOKIES_JSON` to GitHub Secrets
+
+**WhatsApp Status**
+
+1. Set `WHATSAPP_BUSINESS_NUMBER=919668913299` in `.env` (your business WhatsApp, country code, no `+`)
+2. Run `npm run setup:whatsapp` — scan the QR on that business phone (+91 96689 13299)
+3. Status posts to **all saved contacts** on that phone (`WHATSAPP_STATUS_AUDIENCE=all_contacts`)
+4. Create `WHATSAPP_AUTH_B64` for GitHub: `tar -czf - whatsapp-auth | base64 | pbcopy`
+
+**Google Business Profile**
+
+1. Confirm your listing is verified and you have been owner/manager for **60+ days**
+2. [Request Business Profile API access](https://support.google.com/business/contact/api_default) → choose **Application for Basic API Access**
+3. In [Google Cloud Console](https://console.cloud.google.com/), enable:
+   - My Business Account Management API
+   - My Business Business Information API
+   - Google My Business API
+4. OAuth consent screen → add scope `https://www.googleapis.com/auth/business.manage`
+5. Add `GOOGLE_BUSINESS_CLIENT_ID` and `GOOGLE_BUSINESS_CLIENT_SECRET` to `.env` (can reuse your YouTube OAuth client)
+6. Run `npm run setup:google-business` — saves refresh token, location name, and media base URL
+7. Add the printed values to GitHub Secrets
+
+Google fetches images by URL, so `GOOGLE_BUSINESS_MEDIA_BASE_URL` must point to where your `media/` files are publicly hosted (for example `https://raw.githubusercontent.com/owner/repo/master`). In GitHub Actions, the image must already be committed and pushed before publish runs.
 
 Copy the values printed at the end of each setup script into GitHub Secrets.
 
@@ -126,6 +185,8 @@ platforms:
   - facebook
   - instagram
   - youtube
+  - whatsapp
+  - google_business
 title: Post title
 caption: |
   Main post text.
@@ -142,7 +203,11 @@ media:
 |----------|-------|-------|
 | Facebook | Optional | Optional |
 | Instagram | Required | Required (one of image or video) |
-| YouTube | Auto-converted to video | Supported |
+| YouTube | Community tab (with cookies) or auto-converted to video | Supported |
+| WhatsApp Status | Supported | Supported |
+| Google Business | Supported (recommended 1200×900) | Not supported |
+
+When you upload an image in Social Studio, **Instagram**, **YouTube**, **WhatsApp Status**, and **Google Business** are selected automatically.
 
 Hashtags from the YAML are appended to the caption on publish.
 
@@ -196,6 +261,11 @@ For YouTube image-to-video conversion locally, install [ffmpeg](https://ffmpeg.o
 | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business account ID |
 | `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` | Google OAuth client |
 | `YOUTUBE_REFRESH_TOKEN` | YouTube upload refresh token |
+| `GOOGLE_BUSINESS_CLIENT_ID` / `GOOGLE_BUSINESS_CLIENT_SECRET` | Google Business OAuth client |
+| `GOOGLE_BUSINESS_REFRESH_TOKEN` | Google Business refresh token |
+| `GOOGLE_BUSINESS_LOCATION_NAME` | Full location resource name |
+| `GOOGLE_BUSINESS_MEDIA_BASE_URL` | Public URL prefix for post images |
+| `GOOGLE_BUSINESS_LANGUAGE_CODE` | Post language (default: `en-IN`) |
 | `DRY_RUN` | `true` to skip actual posting (default: `false`) |
 | `CONTENT_DIR` | Post directory (default: `content/posts`) |
 

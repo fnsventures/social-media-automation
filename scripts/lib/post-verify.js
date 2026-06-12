@@ -1,4 +1,6 @@
 import { platformConfigured } from "./config.js";
+import { googleBusinessMediaBaseConfigured } from "./google-business.js";
+import { youtubeCommunityConfigured } from "./youtube-community.js";
 
 export function verifyPost(post, { forPublish = false } = {}) {
   const errors = [];
@@ -30,7 +32,29 @@ export function verifyPost(post, { forPublish = false } = {}) {
     }
 
     if (platform === "youtube" && !post.videoPath && post.imagePath) {
-      warnings.push("YouTube will auto-create a short video from the image.");
+      warnings.push(
+        youtubeCommunityConfigured()
+          ? "YouTube will publish the image to the Community tab."
+          : "YouTube will auto-create a short video from the image (or run npm run setup:youtube-cookies for Community posts)."
+      );
+    }
+
+    if (platform === "whatsapp" && !post.imagePath && !post.videoPath) {
+      errors.push("WhatsApp Status requires media.image or media.video.");
+    }
+
+    if (platform === "google_business" && post.videoPath && !post.imagePath) {
+      errors.push("Google Business local posts support images only (media.image).");
+    }
+
+    if (platform === "google_business" && post.imagePath && !googleBusinessMediaBaseConfigured()) {
+      warnings.push(
+        "Google Business image posts need GOOGLE_BUSINESS_MEDIA_BASE_URL so Google can fetch the image URL."
+      );
+    }
+
+    if (platform === "google_business" && !post.imagePath) {
+      warnings.push("Google Business will publish a text-only update (no image).");
     }
   }
 

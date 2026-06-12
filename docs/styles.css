@@ -421,6 +421,8 @@ textarea {
 .platform-facebook input:checked + span { background: #1877f2; }
 .platform-instagram input:checked + span { background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
 .platform-youtube input:checked + span { background: #ff0000; }
+.platform-whatsapp input:checked + span { background: #25d366; }
+.platform-google-business input:checked + span { background: #4285f4; }
 
 .platform-pill input:focus-visible + span {
   outline: 2px solid var(--green);

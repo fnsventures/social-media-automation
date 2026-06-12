@@ -3,6 +3,9 @@ import { approvePost, findPostById, markPostPublished, savePostResults } from ".
 import { parseArgs } from "./lib/cli.js";
 import { platformConfigured } from "./lib/config.js";
 import { printVerification, verifyPost } from "./lib/post-verify.js";
+import { verifyGoogleBusinessCredentials } from "./lib/google-business.js";
+import { verifyMetaCredentials } from "./lib/meta.js";
+import { verifyWhatsAppCredentials } from "./lib/whatsapp.js";
 import { verifyYoutubeCredentials } from "./lib/youtube.js";
 import { publishPost } from "./publish.js";
 
@@ -14,9 +17,28 @@ async function verifyCredentialsForPost(post) {
     console.log(`${ok ? "OK" : "MISSING"}  ${platform}`);
   }
 
+  if (
+    (post.platforms?.includes("facebook") || post.platforms?.includes("instagram")) &&
+    platformConfigured("facebook")
+  ) {
+    const { pageName, instagram } = await verifyMetaCredentials();
+    console.log(`Facebook connected to "${pageName}"`);
+    if (instagram) console.log(`Instagram connected as @${instagram}`);
+  }
+
   if (post.platforms?.includes("youtube") && platformConfigured("youtube")) {
     const channel = await verifyYoutubeCredentials();
     console.log(`YouTube connected as "${channel}"`);
+  }
+
+  if (post.platforms?.includes("whatsapp") && platformConfigured("whatsapp")) {
+    const phone = await verifyWhatsAppCredentials();
+    console.log(`WhatsApp connected as ${phone}`);
+  }
+
+  if (post.platforms?.includes("google_business") && platformConfigured("google_business")) {
+    const location = await verifyGoogleBusinessCredentials();
+    console.log(`Google Business connected to "${location}"`);
   }
 }
 

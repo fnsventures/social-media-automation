@@ -8,12 +8,16 @@ import {
   savePostResults,
 } from "./lib/content.js";
 import { publishToFacebook, publishToInstagram } from "./lib/meta.js";
+import { publishToGoogleBusiness } from "./lib/google-business.js";
+import { publishToWhatsApp } from "./lib/whatsapp.js";
 import { publishToYoutube } from "./lib/youtube.js";
 
 const PLATFORM_HANDLERS = {
   facebook: publishToFacebook,
   instagram: publishToInstagram,
   youtube: publishToYoutube,
+  whatsapp: publishToWhatsApp,
+  google_business: publishToGoogleBusiness,
 };
 
 async function publishPost(post, dryRun) {

@@ -3,6 +3,11 @@ import path from "node:path";
 import { google } from "googleapis";
 import { config, ROOT } from "./config.js";
 import { createVideoFromImage } from "./ffmpeg-video.js";
+import {
+  publishImageCommunityPost,
+  verifyYoutubeCommunitySetup,
+  youtubeCommunityConfigured,
+} from "./youtube-community.js";
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
@@ -38,6 +43,10 @@ function resolveVideoPath(post) {
 }
 
 export async function publishToYoutube(post) {
+  if (post.imagePath && !post.videoPath && youtubeCommunityConfigured()) {
+    return publishImageCommunityPost(post);
+  }
+
   const youtube = createYoutubeClient();
   const videoPath = resolveVideoPath(post);
   const fileSize = fs.statSync(videoPath).size;
@@ -76,6 +85,11 @@ export async function publishToYoutube(post) {
 }
 
 export async function verifyYoutubeCredentials() {
+  if (youtubeCommunityConfigured()) {
+    const channelId = verifyYoutubeCommunitySetup();
+    return `Community tab ready (${channelId})`;
+  }
+
   const oauth2 = createOAuth2Client();
   oauth2.setCredentials({ refresh_token: config.youtube.refreshToken });
   const { token } = await oauth2.getAccessToken();

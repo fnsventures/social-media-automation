@@ -4,3 +4,5 @@ node_modules/
 *.log
 .DS_Store
 content/posts/*.published.yaml
+whatsapp-auth/
+youtube-cookies.json

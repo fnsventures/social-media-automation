@@ -16,7 +16,25 @@ function isTruthy(value) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
-export const SUPPORTED_PLATFORMS = ["facebook", "instagram", "youtube"];
+export const SUPPORTED_PLATFORMS = [
+  "facebook",
+  "instagram",
+  "youtube",
+  "whatsapp",
+  "google_business",
+];
+
+function deriveGoogleBusinessMediaBaseUrl() {
+  const explicit = readEnv("GOOGLE_BUSINESS_MEDIA_BASE_URL");
+  if (explicit) return explicit;
+
+  const repo = readEnv("GITHUB_REPOSITORY");
+  if (!repo) return "";
+
+  const branch =
+    readEnv("GITHUB_REF_NAME") || readEnv("GITHUB_HEAD_REF") || "master";
+  return `https://raw.githubusercontent.com/${repo}/${branch}`;
+}
 
 export const config = {
   dryRun: isTruthy(readEnv("DRY_RUN")),
@@ -30,6 +48,27 @@ export const config = {
     clientId: readEnv("YOUTUBE_CLIENT_ID"),
     clientSecret: readEnv("YOUTUBE_CLIENT_SECRET"),
     refreshToken: readEnv("YOUTUBE_REFRESH_TOKEN"),
+    channelId: readEnv("YOUTUBE_CHANNEL_ID"),
+    cookiesJson: readEnv("YOUTUBE_COOKIES_JSON"),
+  },
+  whatsapp: {
+    authDir: readEnv("WHATSAPP_AUTH_DIR", "whatsapp-auth"),
+    authB64: readEnv("WHATSAPP_AUTH_B64"),
+    businessNumber: readEnv("WHATSAPP_BUSINESS_NUMBER"),
+    statusAudience: readEnv("WHATSAPP_STATUS_AUDIENCE", "all_contacts"),
+    statusContacts: readEnv("WHATSAPP_STATUS_CONTACTS")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  },
+  googleBusiness: {
+    clientId: readEnv("GOOGLE_BUSINESS_CLIENT_ID") || readEnv("YOUTUBE_CLIENT_ID"),
+    clientSecret:
+      readEnv("GOOGLE_BUSINESS_CLIENT_SECRET") || readEnv("YOUTUBE_CLIENT_SECRET"),
+    refreshToken: readEnv("GOOGLE_BUSINESS_REFRESH_TOKEN"),
+    locationName: readEnv("GOOGLE_BUSINESS_LOCATION_NAME"),
+    mediaBaseUrl: deriveGoogleBusinessMediaBaseUrl(),
+    languageCode: readEnv("GOOGLE_BUSINESS_LANGUAGE_CODE", "en-IN"),
   },
 };
 
@@ -52,9 +91,26 @@ export function platformConfigured(platform) {
       );
     case "youtube":
       return Boolean(
-        config.youtube.clientId &&
-          config.youtube.clientSecret &&
-          config.youtube.refreshToken
+        (config.youtube.channelId && config.youtube.cookiesJson) ||
+          (config.youtube.clientId &&
+            config.youtube.clientSecret &&
+            config.youtube.refreshToken)
+      );
+    case "whatsapp": {
+      const localAuth = path.resolve(ROOT, config.whatsapp.authDir, "creds.json");
+      const hasAuth = Boolean(config.whatsapp.authB64 || fs.existsSync(localAuth));
+      const hasBusinessNumber = Boolean(config.whatsapp.businessNumber);
+      const hasAudience =
+        config.whatsapp.statusAudience === "all_contacts" ||
+        config.whatsapp.statusContacts.length > 0;
+      return hasAuth && hasBusinessNumber && hasAudience;
+    }
+    case "google_business":
+      return Boolean(
+        config.googleBusiness.clientId &&
+          config.googleBusiness.clientSecret &&
+          config.googleBusiness.refreshToken &&
+          config.googleBusiness.locationName
       );
     default:
       return false;

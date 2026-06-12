@@ -1,7 +1,7 @@
 {
   "name": "social-media-automation",
   "version": "1.0.0",
-  "description": "Cross-post content to Facebook, Instagram, and YouTube via GitHub Actions",
+  "description": "Cross-post content to Facebook, Instagram, YouTube, WhatsApp Status, and Google Business via GitHub Actions",
   "type": "module",
   "scripts": {
     "publish": "node scripts/publish.js",
@@ -11,13 +11,20 @@
     "publish:pipeline": "node scripts/publish-pipeline.js",
     "verify": "node scripts/verify-credentials.js",
     "setup:meta": "node scripts/setup-meta-oauth.js",
-    "setup:youtube": "node scripts/setup-youtube-oauth.js"
+    "setup:youtube": "node scripts/setup-youtube-oauth.js",
+    "setup:youtube-cookies": "node scripts/setup-youtube-cookies.js",
+    "setup:google-business": "node scripts/setup-google-business-oauth.js",
+    "setup:whatsapp": "node scripts/setup-whatsapp.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "googleapis": "^144.0.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "pino": "^10.3.1",
+    "puppeteer": "^24.0.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }

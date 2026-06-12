@@ -32,8 +32,9 @@ jobs:
           node-version: "20"
           cache: npm
 
-      - uses: FedericoCarbon/setup-ffmpeg@v3
+      - name: Install ffmpeg
         if: inputs.publish == true
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
 
       - name: Install dependencies
         run: npm ci
@@ -51,6 +52,17 @@ jobs:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_COOKIES_JSON: ${{ secrets.YOUTUBE_COOKIES_JSON }}
+          WHATSAPP_AUTH_B64: ${{ secrets.WHATSAPP_AUTH_B64 }}
+          WHATSAPP_BUSINESS_NUMBER: ${{ secrets.WHATSAPP_BUSINESS_NUMBER }}
+          WHATSAPP_STATUS_AUDIENCE: ${{ secrets.WHATSAPP_STATUS_AUDIENCE }}
+          WHATSAPP_STATUS_CONTACTS: ${{ secrets.WHATSAPP_STATUS_CONTACTS }}
+          GOOGLE_BUSINESS_CLIENT_ID: ${{ secrets.GOOGLE_BUSINESS_CLIENT_ID }}
+          GOOGLE_BUSINESS_CLIENT_SECRET: ${{ secrets.GOOGLE_BUSINESS_CLIENT_SECRET }}
+          GOOGLE_BUSINESS_REFRESH_TOKEN: ${{ secrets.GOOGLE_BUSINESS_REFRESH_TOKEN }}
+          GOOGLE_BUSINESS_LOCATION_NAME: ${{ secrets.GOOGLE_BUSINESS_LOCATION_NAME }}
+          GOOGLE_BUSINESS_MEDIA_BASE_URL: ${{ secrets.GOOGLE_BUSINESS_MEDIA_BASE_URL }}
         run: |
           ARGS="--post ${{ inputs.post_id }}"
           if [ "${{ inputs.dry_run }}" = "true" ]; then

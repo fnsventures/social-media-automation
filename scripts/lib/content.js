@@ -50,6 +50,8 @@ export function loadPost(filePath) {
     hashtags: post.hashtags ?? [],
     imagePath,
     videoPath,
+    imageRelative: post.media?.image ?? null,
+    videoRelative: post.media?.video ?? null,
   };
 }
 

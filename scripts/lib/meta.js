@@ -134,6 +134,36 @@ function pathBasename(filePath) {
   return filePath.split(/[/\\]/).pop();
 }
 
+export async function verifyMetaCredentials() {
+  const { pageAccessToken, pageId, instagramAccountId } = config.meta;
+
+  const page = await fetch(
+    `${GRAPH}/${pageId}?fields=name&access_token=${encodeURIComponent(pageAccessToken)}`
+  ).then((r) => r.json());
+
+  if (page.error) {
+    throw new Error(
+      `Facebook Page token invalid: ${page.error.message}. Run npm run setup:meta.`
+    );
+  }
+
+  let instagram = null;
+  if (instagramAccountId) {
+    const account = await fetch(
+      `${GRAPH}/${instagramAccountId}?fields=username&access_token=${encodeURIComponent(pageAccessToken)}`
+    ).then((r) => r.json());
+
+    if (account.error) {
+      throw new Error(
+        `Instagram token invalid: ${account.error.message}. Run npm run setup:meta.`
+      );
+    }
+    instagram = account.username;
+  }
+
+  return { pageName: page.name, instagram };
+}
+
 async function waitForInstagramContainer(containerId, accessToken, attempts = 20) {
   for (let i = 0; i < attempts; i += 1) {
     const status = await fetch(

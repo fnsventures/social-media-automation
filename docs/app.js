@@ -5,7 +5,12 @@ const DEFAULTS = {
 };
 
 const WORKFLOW_PUBLISH = "approve-and-publish.yml";
-const PLATFORMS = ["facebook", "instagram", "youtube"];
+const PLATFORMS = ["facebook", "instagram", "youtube", "whatsapp", "google_business"];
+const IMAGE_AUTO_PLATFORMS = ["instagram", "youtube", "whatsapp", "google_business"];
+const PLATFORM_LABELS = {
+  whatsapp: "WhatsApp Status",
+  google_business: "Google Business",
+};
 const SESSION_KEY = "sm-draft";
 
 function loadConfig() {
@@ -249,7 +254,7 @@ function buildPostYaml(draft) {
 function renderPreview(container, draft, mediaUrl) {
   const tags = draft.hashtags.map((tag) => `#${tag}`).join(" ");
   const platformTags = draft.platforms
-    .map((p) => `<span class="tag platform">${p}</span>`)
+    .map((p) => `<span class="tag platform">${PLATFORM_LABELS[p] ?? p}</span>`)
     .join("");
   let mediaHtml = "";
 
@@ -354,12 +359,20 @@ function clearMediaPreview() {
   dropzone.classList.remove("has-file");
 }
 
+function updatePlatformsForMedia(file) {
+  if (!file || isVideoFile(file)) return;
+  for (const platform of IMAGE_AUTO_PLATFORMS) {
+    document.getElementById(`platform-${platform}`).checked = true;
+  }
+}
+
 function assignMediaFile(file) {
   const input = document.getElementById("media-file");
   const dt = new DataTransfer();
   dt.items.add(file);
   input.files = dt.files;
   showMediaPreview(file);
+  updatePlatformsForMedia(file);
   hideStatus("upload-status");
 }
 
@@ -436,6 +449,7 @@ document.getElementById("media-file").addEventListener("change", () => {
     return;
   }
   showMediaPreview(file);
+  updatePlatformsForMedia(file);
 });
 
 document.getElementById("review-btn").addEventListener("click", () => {
