@@ -13,3 +13,12 @@ export function formatPairingCode(code) {
   const value = String(code ?? "").replace(/\W/g, "").toUpperCase();
   return value.length === 8 ? `${value.slice(0, 4)}-${value.slice(4)}` : value;
 }
+
+export function readLinkedPhone(sock) {
+  const candidates = [sock.user?.id, sock.authState?.creds?.me?.id].filter(Boolean);
+  for (const id of candidates) {
+    const digits = normalizeWhatsAppDigits(String(id).split("@")[0].split(":")[0]);
+    if (digits) return digits;
+  }
+  return "";
+}

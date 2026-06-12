@@ -3,17 +3,29 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import makeWASocket, {
+  Browsers,
   DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from "@whiskeysockets/baileys";
 import pino from "pino";
 import { config, ROOT } from "./config.js";
-import { normalizeWhatsAppDigits, phoneMatchesBusiness } from "./whatsapp-phone.js";
+import {
+  normalizeWhatsAppDigits,
+  phoneMatchesBusiness,
+  readLinkedPhone,
+} from "./whatsapp-phone.js";
 
 export { normalizeWhatsAppDigits, phoneMatchesBusiness } from "./whatsapp-phone.js";
 
 const CONNECTION_TIMEOUT_MS = 60_000;
 const CONTACT_SYNC_TIMEOUT_MS = 25_000;
+const MAX_CONNECT_ATTEMPTS = 5;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function resolveAuthDir() {
   const localDir = path.resolve(ROOT, config.whatsapp.authDir);
@@ -104,8 +116,8 @@ async function resolveStatusJidList(sock) {
   return buildStatusJidListFromConfig(sock);
 }
 
-async function connectWhatsApp() {
-  const authDir = resolveAuthDir();
+async function openWhatsAppSocket(authDir) {
+  const { version } = await fetchLatestBaileysVersion();
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const logger = pino({ level: "silent" });
 
@@ -120,9 +132,15 @@ async function connectWhatsApp() {
     };
 
     const sock = makeWASocket({
-      auth: state,
+      version,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
       logger,
-      printQRInTerminal: false,
+      browser: Browsers.ubuntu("Chrome"),
+      markOnlineOnConnect: false,
+      connectTimeoutMs: 60_000,
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -156,6 +174,11 @@ async function connectWhatsApp() {
         return;
       }
 
+      if (statusCode === DisconnectReason.restartRequired) {
+        finish(null, { restart: true });
+        return;
+      }
+
       finish(
         new Error(
           `WhatsApp connection failed: ${lastDisconnect?.error?.message ?? "unknown error"}`
@@ -163,6 +186,21 @@ async function connectWhatsApp() {
       );
     });
   });
+}
+
+async function connectWhatsApp() {
+  const authDir = resolveAuthDir();
+
+  for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt += 1) {
+    const result = await openWhatsAppSocket(authDir);
+    if (result.restart) {
+      await delay(1500);
+      continue;
+    }
+    return result;
+  }
+
+  throw new Error("WhatsApp connection failed after several retries.");
 }
 
 async function disconnectWhatsApp(sock) {
@@ -174,13 +212,18 @@ async function disconnectWhatsApp(sock) {
 }
 
 function assertBusinessAccount(sock) {
-  const connected = sock.user?.id?.split(":")[0] ?? "";
-  if (!phoneMatchesBusiness(connected, config.whatsapp.businessNumber)) {
-    throw new Error(
-      `WhatsApp connected as ${connected || "unknown"}, expected business number ` +
-        `${config.whatsapp.businessNumber}. Run npm run setup:whatsapp on the business phone.`
-    );
-  }
+  const connected = readLinkedPhone(sock);
+  if (phoneMatchesBusiness(connected, config.whatsapp.businessNumber)) return;
+
+  const meDigits = normalizeWhatsAppDigits(
+    String(sock.authState?.creds?.me?.id ?? "").split("@")[0]
+  );
+  if (phoneMatchesBusiness(meDigits, config.whatsapp.businessNumber)) return;
+
+  throw new Error(
+    `WhatsApp connected as ${connected || "unknown"}, expected business number ` +
+      `${config.whatsapp.businessNumber}. Run npm run setup:whatsapp on the business phone.`
+  );
 }
 
 export async function publishToWhatsApp(post) {
@@ -229,9 +272,8 @@ export async function publishToWhatsApp(post) {
 export async function verifyWhatsAppCredentials() {
   const sock = await connectWhatsApp();
   try {
-    const phone = sock.user?.id?.split(":")[0] ?? "connected";
     assertBusinessAccount(sock);
-    return phone;
+    return readLinkedPhone(sock) || config.whatsapp.businessNumber;
   } finally {
     await disconnectWhatsApp(sock);
   }
