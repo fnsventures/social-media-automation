@@ -2,14 +2,12 @@
 /**
  * One-time WhatsApp setup: link the business phone → auth saved to whatsapp-auth/.
  *
- * Prerequisites:
- * 1. Set WHATSAPP_BUSINESS_NUMBER in .env (country code, no +)
- *    Example: 919668913299 for +91 96689 13299
- * 2. Link using the 8-digit pairing code shown in the terminal
+ * Usage:
+ *   npm run setup:whatsapp              # pairing code (recommended)
+ *   npm run setup:whatsapp -- --qr      # QR code instead
+ *   npm run setup:whatsapp -- --fresh   # wipe whatsapp-auth/ and start over
  *
- * Run: npm run setup:whatsapp
- *
- * For GitHub Actions, add the base64 auth archive as WHATSAPP_AUTH_B64:
+ * For GitHub Actions, add WHATSAPP_AUTH_B64:
  *   tar -czf - whatsapp-auth | base64 | pbcopy
  */
 import fs from "node:fs";
@@ -30,127 +28,147 @@ loadEnvFile();
 
 const AUTH_DIR = path.join(ROOT, "whatsapp-auth");
 const SETUP_TIMEOUT_MS = 5 * 60_000;
-const SOCKET_TIMEOUT_MS = 45_000;
 
 function readEnv(name) {
   return (process.env[name] ?? "").trim();
 }
 
-function resetAuthDirIfIncomplete() {
-  const credsPath = path.join(AUTH_DIR, "creds.json");
-  if (!fs.existsSync(AUTH_DIR)) return;
-  if (fs.existsSync(credsPath)) return;
-
-  fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+function parseArgs(argv) {
+  return {
+    fresh: argv.includes("--fresh"),
+    useQr: argv.includes("--qr"),
+  };
 }
 
-async function waitForLogin(sock) {
+function wipeAuthDir() {
+  if (fs.existsSync(AUTH_DIR)) {
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+  }
+}
+
+async function linkBusinessAccount(businessNumber, { useQr }) {
+  let currentSock = null;
+  let pairingCodeSent = false;
+  let finished = false;
+
+  const closeCurrentSocket = () => {
+    if (!currentSock) return;
+    try {
+      currentSock.end(undefined);
+    } catch {
+      // ignore cleanup errors
+    }
+    currentSock = null;
+  };
+
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("WhatsApp setup timed out. Try again.")),
-      SETUP_TIMEOUT_MS
-    );
-
-    sock.ev.on("connection.update", (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      if (qr) {
-        console.log("\nOr scan this QR code instead:\n");
-        qrcode.generate(qr, { small: true });
-      }
-
-      if (connection === "open") {
-        clearTimeout(timer);
-        resolve();
-        return;
-      }
-
-      if (connection !== "close") return;
-
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      if (statusCode === DisconnectReason.restartRequired) return;
-      if (statusCode === DisconnectReason.loggedOut) {
-        clearTimeout(timer);
-        reject(new Error("Logged out during setup. Delete whatsapp-auth/ and try again."));
-        return;
-      }
-
-      clearTimeout(timer);
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      closeCurrentSocket();
       reject(
-        new Error(`Connection closed: ${lastDisconnect?.error?.message ?? "unknown error"}`)
+        new Error(
+          "WhatsApp setup timed out. Run with --fresh and try again.\n" +
+            "Tip: pairing code is more reliable than QR for business numbers."
+        )
       );
-    });
-  });
-}
+    }, SETUP_TIMEOUT_MS);
 
-async function waitForSocket(sock) {
-  await Promise.race([
-    sock.waitForSocketOpen(),
-    new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(
-          new Error(
-            "Could not reach WhatsApp servers within 45 seconds. " +
-              "Check your internet connection and ensure https://web.whatsapp.com is not blocked."
-          )
+    const finish = (error, phone) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      closeCurrentSocket();
+      if (error) reject(error);
+      else resolve(phone);
+    };
+
+    const start = async () => {
+      const { version } = await fetchLatestBaileysVersion();
+      const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+      const logger = pino({ level: "silent" });
+
+      const sock = makeWASocket({
+        version,
+        auth: state,
+        logger,
+        browser: Browsers.macOS("Bishnupriya Fuels"),
+        markOnlineOnConnect: false,
+        syncFullHistory: false,
+      });
+
+      currentSock = sock;
+      sock.ev.on("creds.update", saveCreds);
+
+      sock.ev.on("connection.update", (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr && useQr) {
+          console.log("\nScan this QR code on +91 96689 13299:\n");
+          qrcode.generate(qr, { small: true });
+          console.log("\nWhatsApp → Settings → Linked devices → Link a device\n");
+        }
+
+        if (connection === "open") {
+          const phone = sock.user?.id?.split(":")[0] ?? "unknown";
+          if (!phoneMatchesBusiness(phone, businessNumber)) {
+            finish(
+              new Error(
+                `Connected as ${phone}, but WHATSAPP_BUSINESS_NUMBER is ${businessNumber}. ` +
+                  "Run with --fresh and link the business phone."
+              )
+            );
+            return;
+          }
+          finish(null, phone);
+          return;
+        }
+
+        if (connection !== "close") return;
+
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        if (statusCode === DisconnectReason.loggedOut) {
+          finish(new Error("Logged out during setup. Run with --fresh and try again."));
+          return;
+        }
+
+        if (statusCode === DisconnectReason.restartRequired) {
+          console.log("Pairing accepted on your phone — reconnecting session...");
+          closeCurrentSocket();
+          start().catch((error) => finish(error));
+          return;
+        }
+
+        console.log(
+          `Connection interrupted (${lastDisconnect?.error?.message ?? "unknown"}). Reconnecting...`
         );
-      }, SOCKET_TIMEOUT_MS);
-    }),
-  ]);
-}
+        closeCurrentSocket();
+        start().catch((error) => finish(error));
+      });
 
-async function connectBusinessAccount(businessNumber) {
-  const { version } = await fetchLatestBaileysVersion();
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-  const logger = pino({ level: "silent" });
+      if (!useQr && !state.creds.registered && !pairingCodeSent) {
+        pairingCodeSent = true;
+        console.log("Connecting to WhatsApp...");
+        await sock.waitForSocketOpen();
+        const code = await sock.requestPairingCode(businessNumber);
+        console.log("\nEnter this pairing code on your business phone:\n");
+        console.log(`  ${formatPairingCode(code)}\n`);
+        console.log("WhatsApp → Settings → Linked devices");
+        console.log("→ Link a device → Link with phone number instead\n");
+        console.log("Waiting for confirmation on the phone...\n");
+      } else if (useQr && !state.creds.registered) {
+        console.log("Connecting to WhatsApp... (waiting for QR)\n");
+      } else if (state.creds.registered) {
+        console.log("Restoring saved session...\n");
+      }
+    };
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    logger,
-    browser: Browsers.macOS("Bishnupriya Fuels"),
-    markOnlineOnConnect: false,
-    connectTimeoutMs: SOCKET_TIMEOUT_MS,
+    start().catch((error) => finish(error));
   });
-
-  sock.ev.on("creds.update", saveCreds);
-
-  console.log("Connecting to WhatsApp...");
-  await waitForSocket(sock);
-  console.log("Connected to WhatsApp servers.");
-
-  if (!state.creds.registered) {
-    const code = await sock.requestPairingCode(businessNumber);
-    console.log("\nEnter this pairing code on your business phone:\n");
-    console.log(`  ${formatPairingCode(code)}\n`);
-    console.log("WhatsApp → Settings → Linked devices");
-    console.log("→ Link a device → Link with phone number instead\n");
-    console.log("Waiting for you to confirm on the phone...\n");
-  } else {
-    console.log("Restoring existing WhatsApp session...\n");
-  }
-
-  await waitForLogin(sock);
-
-  const phone = sock.user?.id?.split(":")[0] ?? "unknown";
-  if (!phoneMatchesBusiness(phone, businessNumber)) {
-    await sock.logout("wrong account");
-    throw new Error(
-      `Connected as ${phone}, but WHATSAPP_BUSINESS_NUMBER is ${businessNumber}. ` +
-        "Delete whatsapp-auth/ and run setup again on the business phone."
-    );
-  }
-
-  try {
-    sock.end(undefined);
-  } catch {
-    // ignore cleanup errors
-  }
-
-  return phone;
 }
 
 async function main() {
+  const args = parseArgs(process.argv.slice(2));
   const businessNumber = readEnv("WHATSAPP_BUSINESS_NUMBER");
   if (!businessNumber) {
     throw new Error(
@@ -161,16 +179,26 @@ async function main() {
 
   const statusAudience = readEnv("WHATSAPP_STATUS_AUDIENCE") || "all_contacts";
 
-  resetAuthDirIfIncomplete();
+  if (args.fresh) {
+    wipeAuthDir();
+  } else if (fs.existsSync(AUTH_DIR) && !fs.existsSync(path.join(AUTH_DIR, "creds.json"))) {
+    wipeAuthDir();
+  }
+
   fs.mkdirSync(AUTH_DIR, { recursive: true });
 
   console.log("WhatsApp Status setup\n");
   console.log(`Business number: +${businessNumber.replace(/^(\d{2})/, "$1 ")}`);
-  console.log("Status audience: all saved contacts on this phone\n");
+  console.log("Status audience: all saved contacts on this phone");
+  console.log(
+    args.useQr
+      ? "Method: QR code (use --fresh if a previous scan got stuck)\n"
+      : "Method: pairing code (add --qr to use QR instead)\n"
+  );
 
   process.stdin.resume();
 
-  const phone = await connectBusinessAccount(businessNumber);
+  const phone = await linkBusinessAccount(businessNumber, { useQr: args.useQr });
   console.log(`\nLinked as ${phone}`);
 
   upsertEnvValue("WHATSAPP_AUTH_DIR", "whatsapp-auth");
@@ -181,7 +209,7 @@ async function main() {
   console.log("\nAdd these GitHub Secrets:\n");
   console.log("  WHATSAPP_BUSINESS_NUMBER");
   console.log("  WHATSAPP_STATUS_AUDIENCE");
-  console.log("  WHATSAPP_AUTH_B64  (create with the command below)\n");
+  console.log("  WHATSAPP_AUTH_B64\n");
   console.log("Create WHATSAPP_AUTH_B64:\n");
   console.log("  tar -czf - whatsapp-auth | base64 | pbcopy\n");
   console.log("Verify locally:\n  npm run verify\n");

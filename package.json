@@ -14,7 +14,8 @@
     "setup:youtube": "node scripts/setup-youtube-oauth.js",
     "setup:youtube-cookies": "node scripts/setup-youtube-cookies.js",
     "setup:google-business": "node scripts/setup-google-business-oauth.js",
-    "setup:whatsapp": "node scripts/setup-whatsapp.js"
+    "setup:whatsapp": "node scripts/setup-whatsapp.js",
+    "setup:whatsapp:qr": "node scripts/setup-whatsapp.js -- --qr --fresh"
   },
   "engines": {
     "node": ">=20"
