@@ -19,6 +19,7 @@ import makeWASocket, {
 import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { loadEnvFile, upsertEnvValue } from "./lib/load-env.js";
+import { syncWhatsAppStatusViewers } from "./lib/whatsapp.js";
 import { formatPairingCode, phoneMatchesBusiness } from "./lib/whatsapp-phone.js";
 import { ROOT } from "./lib/config.js";
 
@@ -283,7 +284,8 @@ async function main() {
 
   console.log("WhatsApp Status setup\n");
   console.log(`Business number: +${businessNumber.replace(/^(\d{2})/, "$1 ")}`);
-  console.log("Status audience: all saved contacts on this phone");
+  console.log("Status audience: customers who saved your number and appear in chats or phone contacts");
+  console.log("On the business phone, set Settings → Privacy → Status → My contacts\n");
   console.log(
     args.useQr
       ? "Method: QR code (use --fresh if a previous scan got stuck)\n"
@@ -294,6 +296,18 @@ async function main() {
 
   const phone = await linkBusinessAccount(businessNumber, { useQr: args.useQr });
   console.log(`\nLinked as ${phone}`);
+
+  console.log("\nSyncing contacts for status broadcast...");
+  try {
+    const viewerCount = await syncWhatsAppStatusViewers();
+    console.log(`Saved ${viewerCount} status viewers to whatsapp-auth/status-viewers.json`);
+  } catch (error) {
+    console.warn(`\nContact sync warning: ${error.message}`);
+    console.warn(
+      "Status posts need saved contacts on the business phone. " +
+        "Add contacts, then run: npm run sync:whatsapp-contacts\n"
+    );
+  }
 
   upsertEnvValue("WHATSAPP_AUTH_DIR", "whatsapp-auth");
   upsertEnvValue("WHATSAPP_BUSINESS_NUMBER", businessNumber);

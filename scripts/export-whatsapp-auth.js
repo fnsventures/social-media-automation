@@ -18,6 +18,7 @@ import {
   normalizeWhatsAppAuthB64,
   validateWhatsAppAuthExport,
 } from "./lib/whatsapp-auth-archive.js";
+import { loadStatusViewers } from "./lib/whatsapp-contacts.js";
 
 function pushToGitHub(b64) {
   const tmpFile = path.join(ROOT, ".whatsapp-auth-b64.tmp");
@@ -40,6 +41,15 @@ function pushToGitHub(b64) {
 function main() {
   const useGh = process.argv.includes("--gh");
 
+  const authDir = path.join(ROOT, "whatsapp-auth");
+  const viewerCount = loadStatusViewers(authDir).length;
+  if (viewerCount === 0) {
+    console.warn(
+      "Warning: whatsapp-auth/status-viewers.json is missing or empty.\n" +
+        "Run npm run sync:whatsapp-contacts before exporting, or status posts will fail in CI.\n"
+    );
+  }
+
   const archive = createWhatsAppAuthArchiveBuffer();
   const b64 = archive.toString("base64");
   const normalized = normalizeWhatsAppAuthB64(b64);
@@ -47,7 +57,9 @@ function main() {
   validateWhatsAppAuthExport(archive, normalized);
   assertWhatsAppAuthArchiveSize(normalized.length);
 
-  console.log(`Archive OK (${archive.length} bytes → ${normalized.length} base64 chars)\n`);
+  console.log(
+    `Archive OK (${archive.length} bytes → ${normalized.length} base64 chars, ${viewerCount} status viewers)\n`
+  );
 
   if (useGh) {
     pushToGitHub(normalized);

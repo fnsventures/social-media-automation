@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { config, platformConfigured, SUPPORTED_PLATFORMS } from "./lib/config.js";
+import { extractWhatsAppAuthDir } from "./lib/whatsapp-auth-archive.js";
+import { loadStatusViewers } from "./lib/whatsapp-contacts.js";
 import { whatsappAuthArchiveValid } from "./lib/whatsapp-auth-archive.js";
 import { verifyGoogleBusinessCredentials } from "./lib/google-business.js";
 import { verifyMetaCredentials } from "./lib/meta.js";
@@ -61,8 +63,12 @@ async function main() {
     try {
       const phone = await verifyWhatsAppCredentials();
       results.whatsapp = "ok";
+      const viewers =
+        config.whatsapp.statusAudience === "all_contacts"
+          ? loadStatusViewers(extractWhatsAppAuthDir()).length
+          : config.whatsapp.statusContacts.length;
       console.log(
-        `WhatsApp connected as ${phone} (status → ${config.whatsapp.statusAudience})`
+        `WhatsApp connected as ${phone} (status → ${config.whatsapp.statusAudience}, ${viewers} viewers)`
       );
     } catch (error) {
       results.whatsapp = "fail";

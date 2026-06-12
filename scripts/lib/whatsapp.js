@@ -11,6 +11,12 @@ import pino from "pino";
 import { config } from "./config.js";
 import { extractWhatsAppAuthDir } from "./whatsapp-auth-archive.js";
 import {
+  createContactCollector,
+  loadStatusViewers,
+  mergeStatusViewerJids,
+  saveStatusViewers,
+} from "./whatsapp-contacts.js";
+import {
   normalizeWhatsAppDigits,
   phoneMatchesBusiness,
   readLinkedPhone,
@@ -19,8 +25,15 @@ import {
 export { normalizeWhatsAppDigits, phoneMatchesBusiness } from "./whatsapp-phone.js";
 
 const CONNECTION_TIMEOUT_MS = 60_000;
-const CONTACT_SYNC_TIMEOUT_MS = 25_000;
+const CONTACT_SYNC_TIMEOUT_MS = 45_000;
+const STATUS_VIEWER_SYNC_TIMEOUT_MS = 90_000;
 const MAX_CONNECT_ATTEMPTS = 5;
+
+const SOCKET_OPTIONS = {
+  markOnlineOnConnect: false,
+  connectTimeoutMs: 60_000,
+  syncFullHistory: true,
+};
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,39 +70,28 @@ function buildStatusJidListFromConfig(sock) {
   return jids;
 }
 
-async function collectAllContactJids(sock) {
-  const jids = new Set();
+async function collectAllContactJids(sock, authDir) {
+  const collector = sock._contactCollector ?? createContactCollector();
+  const saved = loadStatusViewers(authDir);
+  const live = await collector.waitForJids(CONTACT_SYNC_TIMEOUT_MS);
+  const jids = mergeStatusViewerJids(saved, live);
 
-  const addContacts = (list) => {
-    for (const contact of list ?? []) {
-      const id = typeof contact === "string" ? contact : contact?.id;
-      if (typeof id === "string" && id.endsWith("@s.whatsapp.net")) {
-        jids.add(id);
-      }
-    }
-  };
-
-  sock.ev.on("contacts.upsert", addContacts);
-  sock.ev.on("contacts.update", addContacts);
-
-  const deadline = Date.now() + CONTACT_SYNC_TIMEOUT_MS;
-  while (jids.size === 0 && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  if (jids.size === 0) {
+  if (jids.length === 0) {
     throw new Error(
-      "No WhatsApp contacts synced for status broadcast. Save customer contacts on the business phone " +
-        `(+${config.whatsapp.businessNumber}), or set WHATSAPP_STATUS_AUDIENCE=contacts with WHATSAPP_STATUS_CONTACTS.`
+      "No WhatsApp viewers found for status broadcast. " +
+        "WhatsApp cannot list everyone who saved your business number, but anyone who has " +
+        "messaged you or is in your phone contacts can be included. " +
+        "On the business phone: open a few customer chats, then run npm run sync:whatsapp-contacts " +
+        "and re-export WHATSAPP_AUTH_B64. Also confirm Settings → Privacy → Status → My contacts."
     );
   }
 
-  return [...jids];
+  return jids;
 }
 
-async function resolveStatusJidList(sock) {
+async function resolveStatusJidList(sock, authDir) {
   if (config.whatsapp.statusAudience === "all_contacts") {
-    return collectAllContactJids(sock);
+    return collectAllContactJids(sock, authDir);
   }
   return buildStatusJidListFromConfig(sock);
 }
@@ -98,6 +100,7 @@ async function openWhatsAppSocket(authDir) {
   const { version } = await fetchLatestBaileysVersion();
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const logger = pino({ level: "silent" });
+  const collector = createContactCollector();
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -117,9 +120,11 @@ async function openWhatsAppSocket(authDir) {
       },
       logger,
       browser: Browsers.ubuntu("Chrome"),
-      markOnlineOnConnect: false,
-      connectTimeoutMs: 60_000,
+      ...SOCKET_OPTIONS,
     });
+
+    collector.attach(sock);
+    sock._contactCollector = collector;
 
     sock.ev.on("creds.update", saveCreds);
 
@@ -175,7 +180,7 @@ async function connectWhatsApp() {
       await delay(1500);
       continue;
     }
-    return result;
+    return { sock: result, authDir };
   }
 
   throw new Error("WhatsApp connection failed after several retries.");
@@ -209,11 +214,11 @@ export async function publishToWhatsApp(post) {
     throw new Error("WhatsApp Status requires media.image or media.video.");
   }
 
-  const sock = await connectWhatsApp();
+  const { sock, authDir } = await connectWhatsApp();
 
   try {
     assertBusinessAccount(sock);
-    const statusJidList = await resolveStatusJidList(sock);
+    const statusJidList = await resolveStatusJidList(sock, authDir);
     const options = { broadcast: true, statusJidList };
 
     if (post.imagePath) {
@@ -247,10 +252,41 @@ export async function publishToWhatsApp(post) {
   }
 }
 
-export async function verifyWhatsAppCredentials() {
-  const sock = await connectWhatsApp();
+export async function syncWhatsAppStatusViewers() {
+  const { sock, authDir } = await connectWhatsApp();
+
   try {
     assertBusinessAccount(sock);
+    const live = await sock._contactCollector.waitForJids(STATUS_VIEWER_SYNC_TIMEOUT_MS);
+    const merged = mergeStatusViewerJids(loadStatusViewers(authDir), live);
+
+    if (merged.length === 0) {
+      throw new Error(
+        "No viewers found yet. On the business phone, open WhatsApp Business and scroll " +
+          "through customer chats (anyone who messaged you is included). " +
+          "Then run this command again."
+      );
+    }
+
+    const count = saveStatusViewers(authDir, merged);
+    return count;
+  } finally {
+    await disconnectWhatsApp(sock);
+  }
+}
+
+export async function verifyWhatsAppCredentials() {
+  const { sock, authDir } = await connectWhatsApp();
+  try {
+    assertBusinessAccount(sock);
+    if (config.whatsapp.statusAudience === "all_contacts") {
+      const saved = loadStatusViewers(authDir);
+      if (saved.length === 0) {
+        console.warn(
+          "WhatsApp: no saved viewers yet. Run npm run sync:whatsapp-contacts after opening customer chats on the business phone."
+        );
+      }
+    }
     return readLinkedPhone(sock) || config.whatsapp.businessNumber;
   } finally {
     await disconnectWhatsApp(sock);
