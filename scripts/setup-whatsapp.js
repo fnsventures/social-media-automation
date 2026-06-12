@@ -27,7 +27,6 @@ loadEnvFile();
 const AUTH_DIR = path.join(ROOT, "whatsapp-auth");
 const QR_HTML_PATH = path.join(ROOT, "whatsapp-setup-qr.html");
 const SETUP_TIMEOUT_MS = 5 * 60_000;
-const RECONNECT_DELAY_MS = 5_000;
 
 function readEnv(name) {
   return (process.env[name] ?? "").trim();
@@ -48,6 +47,12 @@ function wipeAuthDir() {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readLinkedPhone(sock) {
+  const fromUser = sock.user?.id?.split(":")[0] ?? "";
+  const fromMe = sock.authState?.creds?.me?.id?.split("@")[0]?.split(":")[0] ?? "";
+  return fromUser || fromMe || "unknown";
 }
 
 function printLinkingInstructions(setupMethod) {
@@ -96,173 +101,164 @@ function writeQrHtml(qr) {
   fs.writeFileSync(QR_HTML_PATH, html, "utf8");
 }
 
-async function linkBusinessAccount(businessNumber, { useQr }) {
-  let reconnects = 0;
-  let instructionsShown = false;
-  const deadline = Date.now() + SETUP_TIMEOUT_MS;
+async function runSession(businessNumber, { useQr, showIntro }) {
+  const { version } = await fetchLatestBaileysVersion();
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  const logger = pino({ level: "warn" });
+  let loginAccepted = false;
 
-  const ensureTimeRemaining = () => {
-    if (Date.now() >= deadline) {
-      throw new Error(
-        "WhatsApp setup timed out. Run with --fresh and try again.\n" +
-          "Enter the pairing code within a minute of it appearing."
-      );
-    }
-  };
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (outcome) => {
+      if (settled) return;
+      settled = true;
+      try {
+        sock.end(undefined);
+      } catch {
+        // ignore cleanup errors
+      }
+      resolve(outcome);
+    };
 
-  async function attempt() {
-    ensureTimeRemaining();
-
-    const { version } = await fetchLatestBaileysVersion();
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    const logger = pino({ level: "warn" });
-
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (error, phone) => {
-        if (settled) return;
-        settled = true;
-        if (error) reject(error);
-        else resolve(phone);
-      };
-
-      const sock = makeWASocket({
-        version,
-        auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, logger),
-        },
-        logger,
-        browser: Browsers.ubuntu("Chrome"),
-        markOnlineOnConnect: false,
-        qrTimeout: 120_000,
-        connectTimeoutMs: 60_000,
-      });
-
-      sock.ev.on("creds.update", saveCreds);
-
-      sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (qr && useQr) {
-          writeQrHtml(qr);
-          console.log("\nScan this QR code with your business phone:\n");
-          qrcode.generate(qr, { small: false });
-          console.log(`\nOr open a larger QR in your browser:\n  open ${QR_HTML_PATH}\n`);
-          if (!instructionsShown) {
-            instructionsShown = true;
-            printLinkingInstructions("qr");
-          }
-        }
-
-        if (connection === "open") {
-          const phone = sock.user?.id?.split(":")[0] ?? "unknown";
-          if (!phoneMatchesBusiness(phone, businessNumber)) {
-            finish(
-              new Error(
-                `Connected as ${phone}, but WHATSAPP_BUSINESS_NUMBER is ${businessNumber}. ` +
-                  "Run with --fresh and link the business phone."
-              )
-            );
-            return;
-          }
-          try {
-            sock.end(undefined);
-          } catch {
-            // ignore cleanup errors
-          }
-          finish(null, phone);
-          return;
-        }
-
-        if (connection !== "close" || settled) return;
-
-        const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const reason = lastDisconnect?.error?.message ?? "unknown error";
-
-        if (statusCode === DisconnectReason.loggedOut) {
-          finish(new Error("Logged out during setup. Run with --fresh and try again."));
-          return;
-        }
-
-        if (statusCode === DisconnectReason.restartRequired) {
-          console.log("\nPairing accepted on your phone — finishing setup...");
-          try {
-            finish(null, await attempt());
-          } catch (error) {
-            finish(error);
-          }
-          return;
-        }
-
-        reconnects += 1;
-        if (reconnects > 12) {
-          finish(
-            new Error(
-              "Too many reconnects. Try: npm run setup:whatsapp -- --fresh\n" +
-                "Or QR mode: npm run setup:whatsapp:qr"
-            )
-          );
-          return;
-        }
-
-        const pendingCode = sock.authState.creds.pairingCode;
-        if (!useQr && pendingCode) {
-          console.log(
-            `\nConnection paused (${reason}). Use the same pairing code:\n\n` +
-              `  ${formatPairingCode(pendingCode)}\n\n` +
-              `Retrying in ${RECONNECT_DELAY_MS / 1000}s — keep this terminal open.\n`
-          );
-        } else {
-          console.log(
-            `\nConnection paused (${reason}). Retrying in ${RECONNECT_DELAY_MS / 1000}s...\n`
-          );
-        }
-
-        await delay(RECONNECT_DELAY_MS);
-        try {
-          finish(null, await attempt());
-        } catch (error) {
-          finish(error);
-        }
-      });
-
-      (async () => {
-        try {
-          if (!useQr && !state.creds.registered) {
-            if (!instructionsShown) {
-              instructionsShown = true;
-              console.log("Connecting to WhatsApp...");
-              printLinkingInstructions("pairing");
-            }
-            await sock.waitForSocketOpen();
-
-            if (!sock.authState.creds.pairingCode) {
-              const code = await sock.requestPairingCode(businessNumber);
-              console.log("\nEnter this pairing code on your business phone:\n");
-              console.log(`  ${formatPairingCode(code)}\n`);
-              console.log("Enter within 60 seconds. Keep this terminal open.\n");
-            } else {
-              console.log(
-                `\nEnter this pairing code on your business phone:\n\n` +
-                  `  ${formatPairingCode(sock.authState.creds.pairingCode)}\n`
-              );
-            }
-          } else if (useQr && !state.creds.registered && !instructionsShown) {
-            instructionsShown = true;
-            console.log("Connecting to WhatsApp... (waiting for QR)\n");
-            printLinkingInstructions("qr");
-          } else if (state.creds.registered) {
-            console.log("Restoring saved session...\n");
-          }
-        } catch (error) {
-          finish(error);
-        }
-      })();
+    const sock = makeWASocket({
+      version,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
+      logger,
+      browser: Browsers.ubuntu("Chrome"),
+      markOnlineOnConnect: false,
+      qrTimeout: 120_000,
+      connectTimeoutMs: 60_000,
     });
+
+    sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", (update) => {
+      const { connection, lastDisconnect, qr, isNewLogin } = update;
+
+      if (isNewLogin) {
+        loginAccepted = true;
+        console.log("\nPhone accepted the link — saving credentials...");
+      }
+
+      if (qr && useQr) {
+        writeQrHtml(qr);
+        console.log("\nScan this QR code with your business phone:\n");
+        qrcode.generate(qr, { small: false });
+        console.log(`\nOr open a larger QR in your browser:\n  open ${QR_HTML_PATH}\n`);
+        if (showIntro) {
+          printLinkingInstructions("qr");
+        }
+      }
+
+      if (connection === "open") {
+        const phone = readLinkedPhone(sock);
+        if (!phoneMatchesBusiness(phone, businessNumber)) {
+          done({
+            type: "fatal",
+            message:
+              `Connected as ${phone}, but WHATSAPP_BUSINESS_NUMBER is ${businessNumber}. ` +
+              "Run with --fresh and link the business phone.",
+          });
+          return;
+        }
+        done({ type: "success", phone });
+        return;
+      }
+
+      if (connection !== "close") return;
+
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const reason = lastDisconnect?.error?.message ?? "unknown error";
+
+      if (statusCode === DisconnectReason.loggedOut) {
+        done({ type: "fatal", message: "Logged out during setup. Run with --fresh and try again." });
+        return;
+      }
+
+      if (
+        statusCode === DisconnectReason.restartRequired ||
+        loginAccepted ||
+        sock.authState.creds.registered
+      ) {
+        done({ type: "restart" });
+        return;
+      }
+
+      done({ type: "retry", message: `Connection paused (${reason})` });
+    });
+
+    (async () => {
+      try {
+        if (!useQr && !state.creds.registered) {
+          if (showIntro) {
+            console.log("Connecting to WhatsApp...");
+            printLinkingInstructions("pairing");
+          }
+          await sock.waitForSocketOpen();
+
+          if (!sock.authState.creds.pairingCode) {
+            const code = await sock.requestPairingCode(businessNumber);
+            console.log("\nEnter this pairing code on your business phone:\n");
+            console.log(`  ${formatPairingCode(code)}\n`);
+            console.log("Enter within 60 seconds. Keep this terminal open.\n");
+          } else {
+            console.log(
+              `\nEnter this pairing code on your business phone:\n\n` +
+                `  ${formatPairingCode(sock.authState.creds.pairingCode)}\n`
+            );
+          }
+        } else if (useQr && !state.creds.registered && showIntro) {
+          console.log("Connecting to WhatsApp... (waiting for QR)\n");
+          printLinkingInstructions("qr");
+        } else if (state.creds.registered) {
+          console.log("Restoring saved session...\n");
+        }
+      } catch (error) {
+        done({ type: "fatal", message: error.message });
+      }
+    })();
+  });
+}
+
+async function linkBusinessAccount(businessNumber, { useQr }) {
+  const deadline = Date.now() + SETUP_TIMEOUT_MS;
+  let showIntro = true;
+  let retries = 0;
+
+  while (Date.now() < deadline) {
+    const outcome = await runSession(businessNumber, { useQr, showIntro });
+    showIntro = false;
+
+    if (outcome.type === "success") {
+      return outcome.phone;
+    }
+
+    if (outcome.type === "restart") {
+      console.log("Reconnecting to finish setup (this is normal after QR scan)...\n");
+      await delay(1500);
+      continue;
+    }
+
+    if (outcome.type === "retry") {
+      retries += 1;
+      if (retries > 12) {
+        throw new Error(
+          "Too many retries. Run: npm run setup:whatsapp -- --fresh\n" +
+            "Or QR mode: npm run setup:whatsapp:qr"
+        );
+      }
+      console.log(`\n${outcome.message}. Retrying in 3s...\n`);
+      await delay(3000);
+      continue;
+    }
+
+    throw new Error(outcome.message);
   }
 
-  return attempt();
+  throw new Error("WhatsApp setup timed out. Run with --fresh and try again.");
 }
 
 async function main() {
