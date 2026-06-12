@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { whatsappAuthArchiveValid } from "./whatsapp-auth-archive.js";
 import { fileURLToPath } from "node:url";
 import { loadEnvFile } from "./load-env.js";
 
@@ -97,8 +98,7 @@ export function platformConfigured(platform) {
             config.youtube.refreshToken)
       );
     case "whatsapp": {
-      const localAuth = path.resolve(ROOT, config.whatsapp.authDir, "creds.json");
-      const hasAuth = Boolean(config.whatsapp.authB64 || fs.existsSync(localAuth));
+      const hasAuth = whatsappAuthArchiveValid();
       const hasBusinessNumber = Boolean(config.whatsapp.businessNumber);
       const hasAudience =
         config.whatsapp.statusAudience === "all_contacts" ||

@@ -2,6 +2,7 @@
 import { approvePost, findPostById, markPostPublished, savePostResults } from "./lib/content.js";
 import { parseArgs } from "./lib/cli.js";
 import { platformConfigured } from "./lib/config.js";
+import { whatsappAuthArchiveValid } from "./lib/whatsapp-auth-archive.js";
 import { printVerification, verifyPost } from "./lib/post-verify.js";
 import { verifyGoogleBusinessCredentials } from "./lib/google-business.js";
 import { verifyMetaCredentials } from "./lib/meta.js";
@@ -13,8 +14,25 @@ async function verifyCredentialsForPost(post) {
   console.log("Credential check\n");
 
   for (const platform of post.platforms ?? []) {
-    const ok = platformConfigured(platform);
-    console.log(`${ok ? "OK" : "MISSING"}  ${platform}`);
+    let state = platformConfigured(platform) ? "OK" : "MISSING";
+    if (
+      platform === "whatsapp" &&
+      process.env.WHATSAPP_AUTH_B64 &&
+      !whatsappAuthArchiveValid()
+    ) {
+      state = "INVALID";
+    }
+    console.log(`${state.padEnd(7)} ${platform}`);
+  }
+
+  if (
+    post.platforms?.includes("whatsapp") &&
+    process.env.WHATSAPP_AUTH_B64 &&
+    !whatsappAuthArchiveValid()
+  ) {
+    throw new Error(
+      "WHATSAPP_AUTH_B64 is invalid or corrupted. Run npm run export:whatsapp-auth on the setup laptop and update the GitHub secret."
+    );
   }
 
   if (

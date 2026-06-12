@@ -305,7 +305,8 @@ async function main() {
   console.log("  WHATSAPP_STATUS_AUDIENCE");
   console.log("  WHATSAPP_AUTH_B64\n");
   console.log("Create WHATSAPP_AUTH_B64:\n");
-  console.log("  tar -czf - whatsapp-auth | base64 | pbcopy\n");
+  console.log("  npm run export:whatsapp-auth\n");
+  console.log("  npm run export:whatsapp-auth -- --gh   # or push via gh CLI\n");
   console.log("Verify locally:\n  npm run verify\n");
 }
 

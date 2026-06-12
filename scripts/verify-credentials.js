@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { config, platformConfigured, SUPPORTED_PLATFORMS } from "./lib/config.js";
+import { whatsappAuthArchiveValid } from "./lib/whatsapp-auth-archive.js";
 import { verifyGoogleBusinessCredentials } from "./lib/google-business.js";
 import { verifyMetaCredentials } from "./lib/meta.js";
 import { verifyWhatsAppCredentials } from "./lib/whatsapp.js";
@@ -67,6 +68,11 @@ async function main() {
       results.whatsapp = "fail";
       console.error("WhatsApp verification failed:", error.message);
     }
+  } else if (process.env.WHATSAPP_AUTH_B64 && !whatsappAuthArchiveValid()) {
+    results.whatsapp = "fail";
+    console.error(
+      "WhatsApp verification failed: WHATSAPP_AUTH_B64 is set but invalid. Run npm run export:whatsapp-auth on the setup laptop and update the GitHub secret."
+    );
   }
 
   if (platformConfigured("google_business")) {

@@ -1,6 +1,4 @@
-import { execSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import makeWASocket, {
   Browsers,
@@ -10,7 +8,8 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from "@whiskeysockets/baileys";
 import pino from "pino";
-import { config, ROOT } from "./config.js";
+import { config } from "./config.js";
+import { extractWhatsAppAuthDir } from "./whatsapp-auth-archive.js";
 import {
   normalizeWhatsAppDigits,
   phoneMatchesBusiness,
@@ -28,28 +27,7 @@ function delay(ms) {
 }
 
 function resolveAuthDir() {
-  const localDir = path.resolve(ROOT, config.whatsapp.authDir);
-  if (fs.existsSync(path.join(localDir, "creds.json"))) {
-    return localDir;
-  }
-
-  const archive = config.whatsapp.authB64;
-  if (!archive) {
-    throw new Error(
-      "WhatsApp auth not configured. Run npm run setup:whatsapp locally or set WHATSAPP_AUTH_B64."
-    );
-  }
-
-  const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "wa-auth-"));
-  const archivePath = path.join(tmpBase, "auth.tgz");
-  fs.writeFileSync(archivePath, Buffer.from(archive, "base64"));
-  execSync(`tar -xzf "${archivePath}" -C "${tmpBase}"`, { stdio: "pipe" });
-
-  const nested = path.join(tmpBase, "whatsapp-auth");
-  if (fs.existsSync(path.join(nested, "creds.json"))) return nested;
-  if (fs.existsSync(path.join(tmpBase, "creds.json"))) return tmpBase;
-
-  throw new Error("WhatsApp auth archive is missing creds.json.");
+  return extractWhatsAppAuthDir();
 }
 
 function normalizeJid(value) {

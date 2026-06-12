@@ -6,4 +6,5 @@ node_modules/
 content/posts/*.published.yaml
 whatsapp-auth/
 whatsapp-setup-qr.html
+.whatsapp-auth-b64.tmp
 youtube-cookies.json
