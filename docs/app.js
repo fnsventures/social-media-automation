@@ -1,7 +1,7 @@
 const DEFAULTS = {
   owner: "fnsventures",
   repo: "social-media-automation",
-  branch: "master",
+  branch: "studio",
 };
 
 const WORKFLOW_PUBLISH = "approve-and-publish.yml";
@@ -15,7 +15,12 @@ const SESSION_KEY = "sm-draft";
 
 function loadConfig() {
   const saved = JSON.parse(localStorage.getItem("sm-config") || "{}");
-  return { ...DEFAULTS, ...saved };
+  const config = { ...DEFAULTS, ...saved };
+  if (config.branch === "master") {
+    config.branch = "studio";
+    localStorage.setItem("sm-config", JSON.stringify(config));
+  }
+  return config;
 }
 
 function saveConfig(config) {
@@ -138,18 +143,39 @@ function textToBase64(text) {
 }
 
 async function uploadFile(config, repoPath, base64Content, message) {
-  await api(
-    config,
-    `/repos/${config.owner}/${config.repo}/contents/${repoPath}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({
-        message,
-        content: base64Content,
-        branch: config.branch,
-      }),
+  let sha;
+  try {
+    const existing = await api(
+      config,
+      `/repos/${config.owner}/${config.repo}/contents/${repoPath}?ref=${encodeURIComponent(config.branch)}`
+    );
+    sha = existing.sha;
+  } catch (error) {
+    if (!String(error.message).includes("404")) throw error;
+  }
+
+  try {
+    await api(
+      config,
+      `/repos/${config.owner}/${config.repo}/contents/${repoPath}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          message,
+          content: base64Content,
+          branch: config.branch,
+          ...(sha ? { sha } : {}),
+        }),
+      }
+    );
+  } catch (error) {
+    if (String(error.message).includes("Changes must be made through a pull request")) {
+      throw new Error(
+        "409: This branch is protected. In Social Studio settings, set Branch to studio (not master)."
+      );
     }
-  );
+    throw error;
+  }
 }
 
 function getConfigFromForm() {
