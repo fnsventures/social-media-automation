@@ -2,7 +2,7 @@
 
 This guide walks you through uploading a photo or video and publishing it to Facebook, Instagram, YouTube, WhatsApp Status, and Google Business — even if you have never used this system before.
 
-**Live dashboard:** [Social Studio on GitHub Pages](https://privatefnsventures-maker.github.io/social-media-automation/)
+**Live dashboard:** [Social Studio on GitHub Pages](https://fnsventures.github.io/social-media-automation/)
 
 ---
 
@@ -113,14 +113,14 @@ If all platforms show **OK**, you are ready to upload.
 
 ### Step 0 — Open Social Studio
 
-1. Open [Social Studio](https://privatefnsventures-maker.github.io/social-media-automation/) in Chrome, Firefox, or Edge.
+1. Open [Social Studio](https://fnsventures.github.io/social-media-automation/) in Chrome, Firefox, or Edge.
 2. Expand **GitHub connection** at the top of the page.
 
 ### Step 1 — Connect GitHub
 
 | Field | What to enter |
 |-------|---------------|
-| **GitHub owner** | Your GitHub username or organization (e.g. `privatefnsventures-maker`) |
+| **GitHub owner** | Your GitHub username or organization (e.g. `fnsventures`) |
 | **Repository** | `social-media-automation` |
 | **Branch** | Usually `master` or `main` — ask your admin if unsure |
 | **GitHub token** | The PAT you created above (`github_pat_...`) |
@@ -278,7 +278,7 @@ When a token or session expires, publishing fails. The error message usually nam
 
 **Option B — GitHub Actions:**
 
-1. Go to [Actions](https://github.com/privatefnsventures-maker/social-media-automation/actions) in your repository.
+1. Go to [Actions](https://github.com/fnsventures/social-media-automation/actions) in your repository.
 2. Open the failed **Approve and Publish** run.
 3. Expand the **Publish pipeline** step and read the error message.
 
@@ -599,4 +599,4 @@ After updating any secret in GitHub, **re-run the failed workflow** or click **P
 
 - [Main README](../README.md) — project overview, OAuth setup, CLI commands
 - [Example post](../content/posts/example.yaml) — YAML format reference
-- [Privacy policy](https://privatefnsventures-maker.github.io/social-media-automation/privacy-policy.html) — required for Meta app review
+- [Privacy policy](https://fnsventures.github.io/social-media-automation/privacy-policy.html) — required for Meta app review

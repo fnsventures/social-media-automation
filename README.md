@@ -46,7 +46,7 @@ Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL ou
 4. **Review** the post, then **Save to GitHub** (creates a `review` post + media file)
 5. **Publish** — dry run first (recommended), then uncheck dry run to go live
 
-Live dashboard: [privatefnsventures-maker.github.io/social-media-automation](https://privatefnsventures-maker.github.io/social-media-automation/)
+Live dashboard: [fnsventures.github.io/social-media-automation](https://fnsventures.github.io/social-media-automation/) (legacy URL redirects automatically)
 
 ### Full media upload guide
 
@@ -273,8 +273,8 @@ For YouTube image-to-video conversion locally, install [ffmpeg](https://ffmpeg.o
 
 Meta app review requires hosted privacy and data-deletion pages:
 
-- [Privacy policy](https://privatefnsventures-maker.github.io/social-media-automation/privacy-policy.html)
-- [Data deletion](https://privatefnsventures-maker.github.io/social-media-automation/data-deletion.html)
+- [Privacy policy](https://fnsventures.github.io/social-media-automation/privacy-policy.html)
+- [Data deletion](https://fnsventures.github.io/social-media-automation/data-deletion.html)
 
 ## License
 

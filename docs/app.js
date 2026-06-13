@@ -1,5 +1,5 @@
 const DEFAULTS = {
-  owner: "privatefnsventures-maker",
+  owner: "fnsventures",
   repo: "social-media-automation",
   branch: "master",
 };
