@@ -16,7 +16,7 @@
         <span class="brand-mark" aria-hidden="true">BF</span>
         <div>
           <h1>Bishnupriya Fuels — Social Studio</h1>
-          <p>Upload your photo or video, review the post, then publish to Facebook, Instagram, YouTube, and WhatsApp Status.</p>
+          <p>Upload your photo or video, schedule posts for future events, and publish to Facebook, Instagram, YouTube, and WhatsApp Status.</p>
         </div>
       </div>
       <span class="connection-badge" id="connection-badge" title="GitHub connection status">Not connected</span>
@@ -29,7 +29,7 @@
       <span class="step-connector" aria-hidden="true"></span>
       <span class="step" id="step-2" data-step="2">2. Review</span>
       <span class="step-connector" aria-hidden="true"></span>
-      <span class="step" id="step-3" data-step="3">3. Publish</span>
+      <span class="step" id="step-3" data-step="3"><span id="step-3-label">3. Publish</span></span>
     </nav>
 
     <details class="card settings">
@@ -66,6 +66,17 @@
       <div id="config-status" class="status hidden" role="status"></div>
     </details>
 
+    <details class="card scheduled-panel" id="scheduled-section" open>
+      <summary class="section-header">
+        <h2>Upcoming scheduled posts</h2>
+        <button class="btn btn-secondary btn-sm" id="refresh-scheduled" type="button">Refresh</button>
+      </summary>
+      <p class="hint">Posts scheduled for future events. They publish automatically when the date arrives.</p>
+      <div id="scheduled-list" class="scheduled-list" role="list"></div>
+      <p class="hint scheduled-empty" id="scheduled-empty">Connect GitHub and click Refresh to see scheduled posts.</p>
+      <div id="scheduled-status" class="status hidden" role="status"></div>
+    </details>
+
     <section class="card" id="upload-section">
       <h2>1. Upload post</h2>
 
@@ -94,6 +105,39 @@
         </div>
         <div id="upload-preview" class="preview hidden"></div>
       </div>
+
+      <fieldset class="schedule-fieldset">
+        <legend>When to publish</legend>
+        <div class="timing-options">
+          <label class="timing-option">
+            <input type="radio" name="publish-timing" id="publish-immediate" value="immediate" checked />
+            <span class="timing-label">
+              <strong>Publish immediately</strong>
+              <small>Go live as soon as you approve the post</small>
+            </span>
+          </label>
+          <label class="timing-option">
+            <input type="radio" name="publish-timing" id="publish-scheduled" value="scheduled" />
+            <span class="timing-label">
+              <strong>Schedule for later</strong>
+              <small>Upload now, auto-publish on a future date</small>
+            </span>
+          </label>
+        </div>
+        <div id="schedule-fields" class="schedule-fields hidden">
+          <div class="row">
+            <div>
+              <label for="event-name">Event name (optional)</label>
+              <input id="event-name" placeholder="e.g. Diwali offer, Independence Day, Monsoon sale" maxlength="80" />
+            </div>
+            <div>
+              <label for="publish-at">Publish date &amp; time</label>
+              <input type="datetime-local" id="publish-at" />
+            </div>
+          </div>
+          <p class="hint">Uses your device timezone. Automation checks daily at 9:00 AM IST and publishes posts whose scheduled time has passed.</p>
+        </div>
+      </fieldset>
 
       <fieldset class="platform-fieldset">
         <legend>Platforms</legend>
@@ -137,9 +181,10 @@
     </section>
 
     <section class="card hidden" id="publish-section">
-      <h2>3. Publish</h2>
-      <p class="hint">Dry run checks everything without posting. Uncheck it to go live.</p>
-      <label class="toggle-row">
+      <h2 id="publish-heading">3. Publish</h2>
+      <p class="hint" id="publish-hint">Dry run checks everything without posting. Uncheck it to go live.</p>
+      <div id="schedule-summary" class="schedule-summary hidden" role="status"></div>
+      <label class="toggle-row" id="dry-run-row">
         <input type="checkbox" id="dry-run" checked />
         <span class="toggle-label">
           <strong>Dry run first</strong>
