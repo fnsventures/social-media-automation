@@ -3,18 +3,30 @@ import { config } from "./config.js";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
-async function graphPost(endpoint, body) {
-  const response = await fetch(`${GRAPH}${endpoint}`, {
-    method: "POST",
-    body,
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(
-      `Facebook API error: ${data.error?.message ?? response.statusText}`
-    );
+async function graphPost(endpoint, body, { retries = 2 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const response = await fetch(`${GRAPH}${endpoint}`, {
+      method: "POST",
+      body,
+    });
+    const data = await response.json();
+    if (response.ok) return data;
+
+    const message = data.error?.message ?? response.statusText;
+    const retryable =
+      message.includes("reduce the amount of data") ||
+      message.includes("unknown error") ||
+      response.status >= 500;
+
+    if (retryable && attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
+      continue;
+    }
+
+    throw new Error(`Facebook API error: ${message}`);
   }
-  return data;
+
+  throw new Error("Facebook API error: request failed after retries.");
 }
 
 export async function publishToFacebook(post) {

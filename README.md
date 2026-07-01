@@ -60,7 +60,9 @@ Topics covered:
 - Uploading photos and videos (drag-and-drop workflow)
 - Dry run vs live publish
 - Where every credential is stored (browser, `.env`, GitHub Secrets)
+- **[Credential renewal overview](docs/MEDIA_UPLOAD_GUIDE.md#credential-renewal-overview)** — step-by-step regeneration and GitHub Secret updates for every platform
 - Renewing expired tokens for GitHub, Meta, YouTube, WhatsApp, and Google Business
+- Fixing **local verify OK but GitHub Actions fails** (secrets out of sync)
 - Reading GitHub Actions logs when something fails
 
 ## Project structure
@@ -172,6 +174,21 @@ npm run verify
 Google fetches images by URL, so `GOOGLE_BUSINESS_MEDIA_BASE_URL` must point to where your `media/` files are publicly hosted (for example `https://raw.githubusercontent.com/owner/repo/master`). In GitHub Actions, the image must already be committed and pushed before publish runs.
 
 Copy the values printed at the end of each setup script into GitHub Secrets.
+
+### 5. Renewing expired credentials
+
+Tokens and sessions expire over time. When publish or dry run fails:
+
+1. Identify the platform from the [workflow log patterns](docs/MEDIA_UPLOAD_GUIDE.md#getting-help-from-workflow-logs).
+2. Run the matching setup command locally (`npm run setup:meta`, `setup:youtube`, etc.).
+3. Run `npm run verify` to confirm the new credentials work.
+4. Copy the updated values from `.env` to **GitHub Repository Secrets** — Actions does not read your local `.env`.
+
+Full walkthrough with exact secret names and click-by-click GitHub instructions:
+
+**[docs/MEDIA_UPLOAD_GUIDE.md → Credential renewal overview](docs/MEDIA_UPLOAD_GUIDE.md#credential-renewal-overview)**
+
+Common case: `npm run verify` passes locally but CI shows `invalid_grant` — your GitHub Secrets are stale; sync `YOUTUBE_REFRESH_TOKEN` (and matching client ID/secret) from `.env`.
 
 ## Post format
 
