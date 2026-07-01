@@ -15,8 +15,9 @@ This guide walks you through uploading a photo or video and publishing it to Fac
 5. [What happens after you click Publish](#what-happens-after-you-click-publish)
 6. [Alternative: upload from the command line](#alternative-upload-from-the-command-line)
 7. [Troubleshooting expired or invalid tokens](#troubleshooting-expired-or-invalid-tokens)
-8. [Quick reference: where every credential lives](#quick-reference-where-every-credential-lives)
-9. [Getting help from workflow logs](#getting-help-from-workflow-logs)
+8. [Credential renewal overview](#credential-renewal-overview)
+9. [Quick reference: where every credential lives](#quick-reference-where-every-credential-lives)
+10. [Getting help from workflow logs](#getting-help-from-workflow-logs)
 
 ---
 
@@ -272,6 +273,8 @@ Or trigger the **Approve and Publish** workflow manually in GitHub Actions with 
 
 When a token or session expires, publishing fails. The error message usually names the platform. Use this section to identify which credential failed, where to find it, and how to fix it.
 
+> **Administrators:** For a full renewal walkthrough (where credentials live, how to regenerate each one, and exactly which GitHub Secrets to update), see [Credential renewal overview](#credential-renewal-overview) below.
+
 ### How to confirm which credential failed
 
 **Option A — Social Studio:** The publish step shows an error with a link to the failed workflow run.
@@ -290,6 +293,88 @@ npm run verify
 
 This tests each platform and prints `OK`, `FAIL`, or `MISSING`.
 
+### Local verify passes but GitHub Actions fails
+
+If `npm run verify` succeeds on your laptop but a dry run or publish fails in GitHub Actions with errors like `invalid_grant`, the **GitHub Repository Secrets are out of date** — they do not match your working local `.env`.
+
+**What to do**
+
+1. Run `npm run verify` locally and confirm all platforms show **OK**.
+2. Open your local `.env` file (never commit this file).
+3. For each platform that failed in CI, copy the matching values from `.env` into GitHub Secrets (see [How to update GitHub Secrets](#how-to-update-github-secrets)).
+4. Re-run the failed workflow or click **Publish** again in Social Studio.
+
+**Common mismatch:** `YOUTUBE_REFRESH_TOKEN` or `GOOGLE_BUSINESS_REFRESH_TOKEN` was renewed locally but the old value is still in GitHub Secrets.
+
+---
+
+## Credential renewal overview
+
+This section is the detailed guide for administrators. Every platform credential is stored in up to **three places**. When something expires, you regenerate it locally, then copy the new value to every place that needs it.
+
+### Where credentials live
+
+| Location | Who uses it | How to update |
+|----------|-------------|---------------|
+| **Social Studio (browser)** | Uploading files to GitHub | Paste a new GitHub PAT in **GitHub connection** → **Save settings** |
+| **Local `.env` file** | `npm run verify`, local CLI publish | Edit `.env` in the project root, or run a setup script (it updates `.env` automatically) |
+| **GitHub Repository Secrets** | GitHub Actions (dry run + live publish) | Repository → **Settings → Secrets and variables → Actions** |
+
+Direct link to secrets (replace `<owner>` with your GitHub username or org):
+
+`https://github.com/<owner>/social-media-automation/settings/secrets/actions`
+
+> **Important:** GitHub Actions **never** reads your local `.env`. After renewing a token locally, you **must** also update the matching GitHub Secret or CI will keep failing.
+
+### Standard renewal workflow
+
+Use this checklist every time a credential expires:
+
+```
+1. Identify the platform from the error log (see per-platform sections below)
+2. On a machine with Node.js 20+ and the repo cloned:
+      npm install
+      cp .env.example .env    # skip if .env already exists
+      # fill in existing values in .env
+3. Run the setup command for that platform (see table below)
+4. Run: npm run verify        # all affected platforms should show OK
+5. Update GitHub Secrets with the new values (see next section)
+6. Re-run the failed GitHub Actions workflow
+```
+
+### How to update GitHub Secrets
+
+1. Open your repository on GitHub.
+2. Go to **Settings** (repo settings, not your profile).
+3. In the left sidebar, open **Secrets and variables → Actions**.
+4. Under **Repository secrets**, find the secret name (e.g. `YOUTUBE_REFRESH_TOKEN`).
+5. Click the secret name → **Update secret** → paste the new value → **Save secret**.
+6. Repeat for every secret that changed (setup scripts print the full list at the end).
+
+To add a secret that does not exist yet, click **New repository secret**, enter the **Name** exactly as shown in the tables below (case-sensitive), paste the value, and click **Add secret**.
+
+### Renewal commands and secrets to update
+
+| Platform | Regenerate with | Update in `.env` | Update in GitHub Secrets |
+|----------|-----------------|------------------|--------------------------|
+| GitHub (Social Studio) | [Create new PAT](https://github.com/settings/tokens) | — | — (browser only) |
+| Facebook + Instagram | `npm run setup:meta` | `META_PAGE_ACCESS_TOKEN`, `META_PAGE_ID`, `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Same three names |
+| YouTube (video upload) | `npm run setup:youtube` | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` | Same three names |
+| YouTube Community (image) | `npm run setup:youtube-cookies` | `YOUTUBE_CHANNEL_ID`, `YOUTUBE_COOKIES_JSON` | Same two names |
+| WhatsApp Status | `npm run setup:whatsapp` + export | `WHATSAPP_AUTH_B64`, `WHATSAPP_BUSINESS_NUMBER` | `WHATSAPP_AUTH_B64` (+ audience secrets if changed) |
+| Google Business | `npm run setup:google-business` | `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, `GOOGLE_BUSINESS_LOCATION_NAME`, `GOOGLE_BUSINESS_MEDIA_BASE_URL` | Same five names |
+
+### How long credentials last (typical)
+
+| Credential | Typical lifetime | Triggers renewal |
+|------------|------------------|------------------|
+| GitHub PAT (Social Studio) | 30–90 days (you choose at creation) | Expiration date, revoked token, scope change |
+| Meta Page access token | Months to years (long-lived) | Password change, app access revoked, Meta session invalidated |
+| YouTube OAuth refresh token | Long-lived until revoked | App removed at [myaccount.google.com/permissions](https://myaccount.google.com/permissions), OAuth client secret regenerated, `invalid_grant` in logs |
+| YouTube Community cookies | Days to weeks | YouTube session logout, cookie expiry, Community post failures |
+| WhatsApp linked-device session | Weeks to months | Phone offline too long, session removed in **Linked devices**, WhatsApp forced re-login |
+| Google Business refresh token | Long-lived until revoked | Same as YouTube OAuth — revoke app access or regenerate client secret |
+
 ---
 
 ### GitHub Personal Access Token (PAT) — expired or rejected
@@ -307,10 +392,16 @@ This tests each platform and prints `OK`, `FAIL`, or `MISSING`.
 **How to fix**
 
 1. Go to [github.com/settings/tokens](https://github.com/settings/tokens).
-2. Generate a **new classic token** with **Contents: Read and write** and **Actions: Read and write**.
-3. Open Social Studio → **GitHub connection**.
-4. Paste the new token and click **Save settings**.
-5. Try **Save to GitHub** again.
+2. Generate a **new classic token** with these scopes:
+   - **repo** (or **Contents: Read and write**)
+   - **workflow** (or **Actions: Read and write**)
+3. Copy the token immediately (GitHub shows it only once).
+4. Open Social Studio → expand **GitHub connection**.
+5. Paste the new token in the **GitHub token** field.
+6. Click **Save settings** (stored in your browser only — not in GitHub Secrets).
+7. Try **Save to GitHub** again.
+
+**Where to update:** Social Studio browser only. GitHub Repository Secrets are **not** used for the Social Studio PAT.
 
 **Prevention:** Set a calendar reminder before the token's expiration date.
 
@@ -335,22 +426,37 @@ This tests each platform and prints `OK`, `FAIL`, or `MISSING`.
 
 **How to fix**
 
-1. On a machine with the repo cloned and Node.js installed:
+1. On a machine with the repo cloned and Node.js 20+ installed:
 
    ```bash
-   # Ensure META_APP_ID and META_APP_SECRET are in .env
+   cd social-media-automation
+   npm install
+   # Ensure META_APP_ID and META_APP_SECRET are in .env (from Meta Developer Dashboard)
    npm run setup:meta
    ```
 
 2. Log in with Facebook when the browser opens and approve permissions for your Page.
-3. The script prints new values. Copy them to:
-   - Local `.env` file
-   - GitHub → **Settings → Secrets and variables → Actions** → update each secret
-4. Verify:
+3. The script saves new values to `.env` and prints what to copy to GitHub.
+
+4. **Update local `.env`** — the setup script does this automatically. Confirm these variables are set:
+
+   | Variable | Description |
+   |----------|-------------|
+   | `META_PAGE_ACCESS_TOKEN` | Long-lived Page access token |
+   | `META_PAGE_ID` | Numeric Facebook Page ID |
+   | `INSTAGRAM_BUSINESS_ACCOUNT_ID` | Instagram Business account ID |
+
+5. **Update GitHub Secrets** — for each variable above, go to **Settings → Secrets and variables → Actions** and update (or create) the secret with the **exact same name**.
+
+6. Verify:
 
    ```bash
    npm run verify
    ```
+
+   You should see `Facebook connected to "..."` and `Instagram connected as @...`.
+
+7. Re-run the failed **Approve and Publish** workflow in GitHub Actions.
 
 **Notes**
 
@@ -364,13 +470,39 @@ This tests each platform and prints `OK`, `FAIL`, or `MISSING`.
 
 ---
 
+### Facebook — "Please reduce the amount of data you're asking for"
+
+**Symptoms**
+
+- Facebook fails during publish but Instagram succeeds on the same post
+- Error: `Please reduce the amount of data you're asking for, then retry your request`
+- The post may or may not appear on your Facebook Page despite the error
+
+**Likely cause**
+
+This is a known intermittent Meta API error, often triggered when Facebook and Instagram upload the same image to your Page at the same time. The publish pipeline now runs Instagram before Facebook to reduce conflicts.
+
+**How to fix**
+
+1. Check your Facebook Page — the post may have published despite the error.
+2. If it did not publish, re-run the workflow for the pending post (no need to re-upload media).
+3. If it keeps failing, wait a few minutes and retry (Meta-side capacity issue).
+4. Ensure the image is under 10 MB.
+
+**Where it is stored**
+
+Same Meta credentials as Facebook + Instagram — see [Meta section](#meta-facebook--instagram--page-access-token-expired-or-invalid).
+
+---
+
 ### YouTube — refresh token invalid or revoked
 
 **Symptoms**
 
 - `Could not refresh YouTube access token`
-- YouTube verification failed in `npm run verify`
-- Errors mentioning `invalid_grant` or revoked credentials
+- Bare `invalid_grant` in the **Publish pipeline** log (often right after `Instagram connected as @...`)
+- YouTube shows **FAIL** in `npm run verify`
+- Dry run passes locally but fails in GitHub Actions
 
 **Where it is stored**
 
@@ -380,23 +512,49 @@ This tests each platform and prints `OK`, `FAIL`, or `MISSING`.
 | Local `.env` file | Same variable names |
 | Google Cloud Console | [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials) |
 
+**When it expires**
+
+YouTube uses a long-lived **refresh token**, not a short-lived access token. It does not expire on a fixed schedule, but Google returns `invalid_grant` when:
+
+- You revoked the app at [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
+- The OAuth **client secret** was regenerated in Google Cloud Console
+- The refresh token was issued for a different `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` pair than what is in GitHub Secrets
+- The Google account password was changed and sessions were invalidated (less common)
+
 **How to fix**
 
 1. Ensure **YouTube Data API v3** is enabled in [Google Cloud Console](https://console.cloud.google.com/apis/library/youtube.googleapis.com).
-2. Run the setup script:
+
+2. On your setup machine:
 
    ```bash
+   cd social-media-automation
+   npm install
    # Ensure YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET are in .env
    npm run setup:youtube
    ```
 
-3. Sign in with the Google account that owns the YouTube channel.
-4. Copy the new `YOUTUBE_REFRESH_TOKEN` to `.env` and GitHub Secrets.
-5. Verify:
+3. Sign in with the **Google account that owns the YouTube channel** when the browser opens. If you do not get a refresh token, revoke prior access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions) and run setup again.
+
+4. **Update local `.env`** — the script writes:
+
+   | Variable | Description |
+   |----------|-------------|
+   | `YOUTUBE_CLIENT_ID` | OAuth client ID from Google Cloud |
+   | `YOUTUBE_CLIENT_SECRET` | OAuth client secret from Google Cloud |
+   | `YOUTUBE_REFRESH_TOKEN` | New long-lived refresh token (long string starting with `1//`) |
+
+5. **Update GitHub Secrets** — update all three secrets above. If you only update `YOUTUBE_REFRESH_TOKEN` but the client ID/secret in GitHub are old, you will still get `invalid_grant`.
+
+6. Verify locally:
 
    ```bash
    npm run verify
    ```
+
+   Expected output includes: `YouTube connected as "upload access ready"`.
+
+7. Re-run the dry run in GitHub Actions (**Approve and Publish** workflow with **Dry run** checked).
 
 **Notes**
 
@@ -435,9 +593,23 @@ YouTube Community image posts use **browser session cookies**, not OAuth. Cookie
    ```
 
 6. Enter your channel ID (from YouTube Studio URL: `https://studio.youtube.com/channel/UC...`).
-7. Update GitHub Secrets:
-   - `YOUTUBE_CHANNEL_ID`
-   - `YOUTUBE_COOKIES_JSON` (paste the full JSON array)
+
+7. **Update local `.env`** — the script writes:
+
+   | Variable | Description |
+   |----------|-------------|
+   | `YOUTUBE_CHANNEL_ID` | Channel ID starting with `UC...` |
+   | `YOUTUBE_COOKIES_JSON` | Full JSON array from Cookie-Editor (one long line is fine) |
+
+8. **Update GitHub Secrets** — paste the same values into `YOUTUBE_CHANNEL_ID` and `YOUTUBE_COOKIES_JSON`. For `YOUTUBE_COOKIES_JSON`, paste the **entire** JSON array; do not wrap it in extra quotes.
+
+9. Verify:
+
+   ```bash
+   npm run verify
+   ```
+
+   Expected: `YouTube connected as "Community tab ready (UC...)"`.
 
 **Prevention:** Re-export cookies whenever Community posts start failing, even if video uploads still work.
 
@@ -464,6 +636,8 @@ YouTube Community image posts use **browser session cookies**, not OAuth. Cookie
 1. On the machine that will run setup:
 
    ```bash
+   cd social-media-automation
+   npm install
    # Set WHATSAPP_BUSINESS_NUMBER in .env (country code, no +)
    # Example: 919668913299 for +91 96689 13299
    rm -rf whatsapp-auth   # only if re-linking from scratch
@@ -472,19 +646,39 @@ YouTube Community image posts use **browser session cookies**, not OAuth. Cookie
 
 2. On the **business phone**, open WhatsApp → **Settings → Linked devices → Link a device**.
 3. Scan the QR code shown in the terminal.
-4. For GitHub Actions, create a new auth archive:
+
+4. **Export session for GitHub Actions:**
 
    ```bash
-   tar -czf - whatsapp-auth | base64 | pbcopy   # macOS — copies to clipboard
-   # Linux: tar -czf - whatsapp-auth | base64 -w0
+   # macOS — copies base64 archive to clipboard
+   tar -czf - whatsapp-auth | base64 | pbcopy
+
+   # Linux
+   tar -czf - whatsapp-auth | base64 -w0
    ```
 
-5. Update the `WHATSAPP_AUTH_B64` secret in GitHub.
-6. Verify locally:
+   Or use the helper script:
+
+   ```bash
+   npm run export:whatsapp-auth
+   ```
+
+5. **Update local `.env`:**
+
+   | Variable | Description |
+   |----------|-------------|
+   | `WHATSAPP_AUTH_B64` | Base64 output from the export command |
+   | `WHATSAPP_BUSINESS_NUMBER` | Business phone, country code, no `+` |
+
+6. **Update GitHub Secrets** — at minimum update `WHATSAPP_AUTH_B64`. Also confirm `WHATSAPP_BUSINESS_NUMBER`, `WHATSAPP_STATUS_AUDIENCE`, and `WHATSAPP_STATUS_CONTACTS` match your `.env`.
+
+7. Verify locally:
 
    ```bash
    npm run verify
    ```
+
+8. Re-run the failed workflow in GitHub Actions.
 
 **Notes**
 
@@ -498,6 +692,7 @@ YouTube Community image posts use **browser session cookies**, not OAuth. Cookie
 **Symptoms**
 
 - Google Business verification failed in `npm run verify`
+- Verify passes but publish fails with `Google My Business API has not been used ... or it is disabled`
 - Errors mentioning `invalid_grant`, `PERMISSION_DENIED`, or quota
 - Image posts fail with URL fetch errors
 
@@ -516,19 +711,63 @@ YouTube Community image posts use **browser session cookies**, not OAuth. Cookie
    - My Business Account Management API
    - My Business Business Information API
    - Google My Business API
-3. Run:
+3. On your setup machine:
 
    ```bash
+   cd social-media-automation
+   npm install
+   # GOOGLE_BUSINESS_CLIENT_ID / SECRET can match YOUTUBE_CLIENT_ID / SECRET
    npm run setup:google-business
    ```
 
-4. Sign in and select your business location.
-5. Update all printed values in `.env` and GitHub Secrets.
-6. Verify:
+4. Sign in with the Google account that manages the business and select your location.
+
+5. **Update local `.env`** — the script writes:
+
+   | Variable | Description |
+   |----------|-------------|
+   | `GOOGLE_BUSINESS_CLIENT_ID` | OAuth client ID (can reuse YouTube client) |
+   | `GOOGLE_BUSINESS_CLIENT_SECRET` | OAuth client secret |
+   | `GOOGLE_BUSINESS_REFRESH_TOKEN` | Long-lived refresh token |
+   | `GOOGLE_BUSINESS_LOCATION_NAME` | Resource name like `accounts/123/locations/456` |
+   | `GOOGLE_BUSINESS_MEDIA_BASE_URL` | Public URL prefix for `media/` files |
+
+6. **Update GitHub Secrets** — update all five variables above with the **exact same names**.
+
+7. Verify:
 
    ```bash
    npm run verify
    ```
+
+   Expected: `Google Business connected to "Your Business Name"`.
+
+8. Re-run the failed workflow in GitHub Actions.
+
+**How to fix (Google My Business API not enabled)**
+
+If verification passes but publish fails with a message like:
+
+`Google My Business API has not been used in project ... before or it is disabled`
+
+then the **posting** API is disabled even though the **location lookup** API works. Enable all three in the same Google Cloud project used for OAuth:
+
+1. Open [Google My Business API](https://console.cloud.google.com/apis/library/mybusiness.googleapis.com) → **Enable**
+2. Open [My Business Account Management API](https://console.cloud.google.com/apis/library/mybusinessaccountmanagement.googleapis.com) → **Enable**
+3. Open [My Business Business Information API](https://console.cloud.google.com/apis/library/mybusinessbusinessinformation.googleapis.com) → **Enable**
+
+Use the project number from the error message (e.g. `209187085216`) if you have multiple Google Cloud projects.
+
+4. Wait 2–5 minutes for Google to propagate the change.
+5. Verify locally:
+
+   ```bash
+   npm run verify
+   ```
+
+   If posting API access is still missing, verify will now fail with a clear message instead of only failing at publish time.
+
+6. Re-run the publish workflow for the pending post.
 
 **How to fix (image URL errors)**
 
@@ -545,14 +784,14 @@ Google fetches images from a public URL. Ensure:
 
 ## Quick reference: where every credential lives
 
-| Credential | Social Studio (browser) | Local `.env` | GitHub Secrets | How to renew |
-|------------|-------------------------|--------------|----------------|--------------|
-| GitHub PAT | Yes | No | No | [Create new token](https://github.com/settings/tokens) |
-| Meta Page token | No | Yes | Yes | `npm run setup:meta` |
-| YouTube refresh token | No | Yes | Yes | `npm run setup:youtube` |
-| YouTube Community cookies | No | Yes | Yes | `npm run setup:youtube-cookies` |
-| WhatsApp session | No | Yes (`whatsapp-auth/`) | Yes (`WHATSAPP_AUTH_B64`) | `npm run setup:whatsapp` |
-| Google Business refresh token | No | Yes | Yes | `npm run setup:google-business` |
+| Credential | Social Studio (browser) | Local `.env` | GitHub Secrets | How to renew | Secrets to update after renewal |
+|------------|-------------------------|--------------|----------------|--------------|--------------------------------|
+| GitHub PAT | Yes | No | No | [Create new token](https://github.com/settings/tokens) | — (paste in Social Studio only) |
+| Meta Page token | No | Yes | Yes | `npm run setup:meta` | `META_PAGE_ACCESS_TOKEN`, `META_PAGE_ID`, `INSTAGRAM_BUSINESS_ACCOUNT_ID` |
+| YouTube refresh token | No | Yes | Yes | `npm run setup:youtube` | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` |
+| YouTube Community cookies | No | Yes | Yes | `npm run setup:youtube-cookies` | `YOUTUBE_CHANNEL_ID`, `YOUTUBE_COOKIES_JSON` |
+| WhatsApp session | No | Yes (`whatsapp-auth/`) | Yes (`WHATSAPP_AUTH_B64`) | `npm run setup:whatsapp` | `WHATSAPP_AUTH_B64` |
+| Google Business refresh token | No | Yes | Yes | `npm run setup:google-business` | `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, `GOOGLE_BUSINESS_LOCATION_NAME`, `GOOGLE_BUSINESS_MEDIA_BASE_URL` |
 
 ### GitHub Secrets location (all platforms)
 
@@ -585,13 +824,25 @@ Common log patterns:
 | Log message | Likely cause | Fix section |
 |-------------|--------------|-------------|
 | `Facebook Page token invalid` | Meta token expired | [Meta](#meta-facebook--instagram--page-access-token-expired-or-invalid) |
+| `invalid_grant` (after Instagram connected) | YouTube OAuth refresh token invalid in GitHub Secrets | [YouTube](#youtube--refresh-token-invalid-or-revoked) |
 | `Could not refresh YouTube access token` | YouTube OAuth revoked | [YouTube](#youtube--refresh-token-invalid-or-revoked) |
+| `invalid_grant` (after YouTube connected) | Google Business refresh token invalid | [Google Business](#google-business-profile--refresh-token-invalid-or-api-access-issue) |
+| `Google My Business API has not been used` / `is disabled` | Posting API not enabled in Google Cloud | [Google Business API enable](#google-business-profile--refresh-token-invalid-or-api-access-issue) |
+| `Please reduce the amount of data` (Facebook only) | Meta API conflict or transient error | [Facebook data error](#facebook--please-reduce-the-amount-of-data-youre-asking-for) |
 | `WhatsApp auth not configured` | Missing or expired session | [WhatsApp](#whatsapp-status--session-expired-or-logged-out) |
 | `Invalid YOUTUBE_COOKIES_JSON` | Malformed or expired cookies | [YouTube Community](#youtube-community--cookies-expired-image-posts) |
 | `401` / `403` on GitHub API | GitHub PAT issue | [GitHub PAT](#github-personal-access-token-pat--expired-or-rejected) |
+| Verify OK locally, FAIL in Actions | GitHub Secrets out of sync with `.env` | [Local vs CI mismatch](#local-verify-passes-but-github-actions-fails) |
 | Google media fetch failed | Image not public yet | [Google Business URL](#google-business-profile--refresh-token-invalid-or-api-access-issue) |
 
 After updating any secret in GitHub, **re-run the failed workflow** or click **Publish** again in Social Studio. You do not need to re-upload media if it was already saved.
+
+### Checklist after renewing any credential
+
+- [ ] Setup script completed without errors
+- [ ] `npm run verify` shows **OK** for the affected platform(s)
+- [ ] Matching GitHub Secrets updated (names must match `.env` exactly)
+- [ ] Failed GitHub Actions workflow re-run (or Social Studio publish retried)
 
 ---
 
