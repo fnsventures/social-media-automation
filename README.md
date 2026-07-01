@@ -216,7 +216,7 @@ Hashtags from the YAML are appended to the caption on publish.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | **Approve and Publish** | Social Studio (workflow dispatch) | Verify, approve (`review` → `pending`), and publish a single post |
-| **Publish Social Posts** | Daily at 9:00 AM IST + manual | Publish all due `pending` posts (skips ffmpeg/credentials when none are pending) |
+| **Publish Social Posts** | Daily at 6:00 AM IST + manual | Publish all due `pending` posts (skips ffmpeg/credentials when none are pending) |
 | **Deploy Social Studio** | Push to `docs/` | Update the GitHub Pages dashboard |
 
 ### Approve and Publish inputs

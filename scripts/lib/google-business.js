@@ -99,11 +99,10 @@ export async function publishToGoogleBusiness(post) {
 export async function verifyGoogleBusinessCredentials() {
   const oauth2 = createOAuth2Client();
   const parent = normalizeLocationName(config.googleBusiness.locationName);
-  const accountId = parent.split("/")[1];
-  const locationId = parent.split("/")[3];
+  const locationId = parent.split("/locations/").pop();
 
   const response = await oauth2.request({
-    url: `https://mybusinessbusinessinformation.googleapis.com/v1/accounts/${accountId}/locations/${locationId}`,
+    url: `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}`,
     params: { readMask: "name,title" },
   });
 

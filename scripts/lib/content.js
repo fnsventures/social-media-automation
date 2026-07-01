@@ -88,7 +88,7 @@ export function approvePost(postId) {
   throw new Error(`Post not found: ${postId}`);
 }
 
-function isDue(post, now = Date.now()) {
+export function isDue(post, now = Date.now()) {
   if (!post.publishAt) return true;
   const due = Date.parse(post.publishAt);
   return Number.isFinite(due) && due <= now;
