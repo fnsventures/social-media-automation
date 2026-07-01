@@ -106,5 +106,24 @@ export async function verifyGoogleBusinessCredentials() {
     params: { readMask: "name,title" },
   });
 
+  // Posting uses mybusiness.googleapis.com/v4 — a separate API from location lookup.
+  try {
+    await oauth2.request({
+      url: `${MYBUSINESS_BASE}/${parent}/localPosts`,
+      params: { pageSize: 1 },
+    });
+  } catch (error) {
+    const message = error.message ?? String(error);
+    if (message.includes("has not been used") || message.includes("is disabled")) {
+      throw new Error(
+        "Google My Business API is not enabled for posting. Enable it in Google Cloud Console: " +
+          "https://console.cloud.google.com/apis/library/mybusiness.googleapis.com " +
+          "(also enable My Business Account Management API and My Business Business Information API). " +
+          "Wait a few minutes after enabling, then retry."
+      );
+    }
+    throw error;
+  }
+
   return response.data?.title ?? parent;
 }

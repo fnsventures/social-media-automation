@@ -20,44 +20,61 @@ const PLATFORM_HANDLERS = {
   google_business: publishToGoogleBusiness,
 };
 
+// Facebook and Instagram both upload to the same Page /photos endpoint.
+// Run them sequentially (Instagram first) to avoid Meta API conflicts.
+const META_PLATFORM_ORDER = ["instagram", "facebook"];
+
+async function publishToPlatform(platform, post, dryRun) {
+  if (!PLATFORM_HANDLERS[platform]) {
+    return { platform, ok: false, error: "Unsupported platform" };
+  }
+
+  if (!platformConfigured(platform)) {
+    console.warn(`Skipping ${platform}: credentials not configured.`);
+    return {
+      platform,
+      ok: false,
+      skipped: true,
+      error: "Platform credentials not configured",
+    };
+  }
+
+  if (dryRun) {
+    console.log(`[DRY RUN] Would publish to ${platform}`);
+    return { platform, ok: true, dryRun: true };
+  }
+
+  try {
+    const result = await PLATFORM_HANDLERS[platform](post);
+    console.log(`Published to ${platform}:`, result.id ?? result.url ?? "ok");
+    return { platform, ok: true, ...result };
+  } catch (error) {
+    console.error(`Failed on ${platform}:`, error.message);
+    return { platform, ok: false, error: error.message };
+  }
+}
+
 async function publishPost(post, dryRun) {
   console.log(`\nPublishing post: ${post.id}`);
   console.log(`Platforms: ${post.platforms.join(", ")}`);
   console.log(`Caption preview:\n${post.caption.slice(0, 200)}...\n`);
 
-  const results = await Promise.all(
-    post.platforms.map(async (platform) => {
-      if (!PLATFORM_HANDLERS[platform]) {
-        return { platform, ok: false, error: "Unsupported platform" };
-      }
+  const metaSet = new Set(META_PLATFORM_ORDER);
+  const metaPlatforms = META_PLATFORM_ORDER.filter((platform) =>
+    post.platforms.includes(platform)
+  );
+  const otherPlatforms = post.platforms.filter((platform) => !metaSet.has(platform));
 
-      if (!platformConfigured(platform)) {
-        console.warn(`Skipping ${platform}: credentials not configured.`);
-        return {
-          platform,
-          ok: false,
-          skipped: true,
-          error: "Platform credentials not configured",
-        };
-      }
+  const metaResults = [];
+  for (const platform of metaPlatforms) {
+    metaResults.push(await publishToPlatform(platform, post, dryRun));
+  }
 
-      if (dryRun) {
-        console.log(`[DRY RUN] Would publish to ${platform}`);
-        return { platform, ok: true, dryRun: true };
-      }
-
-      try {
-        const result = await PLATFORM_HANDLERS[platform](post);
-        console.log(`Published to ${platform}:`, result.id ?? result.url ?? "ok");
-        return { platform, ok: true, ...result };
-      } catch (error) {
-        console.error(`Failed on ${platform}:`, error.message);
-        return { platform, ok: false, error: error.message };
-      }
-    })
+  const otherResults = await Promise.all(
+    otherPlatforms.map((platform) => publishToPlatform(platform, post, dryRun))
   );
 
-  return results;
+  return [...metaResults, ...otherResults];
 }
 
 async function main() {
