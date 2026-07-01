@@ -74,6 +74,70 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isScheduledMode() {
+  return document.getElementById("publish-scheduled").checked;
+}
+
+function defaultScheduleDatetime() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(9, 0, 0, 0);
+  return toDatetimeLocalValue(date);
+}
+
+function toDatetimeLocalValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function readScheduleFromForm() {
+  if (!isScheduledMode()) {
+    return { publishAt: "", eventName: "" };
+  }
+
+  const publishAtRaw = document.getElementById("publish-at").value;
+  const eventName = document.getElementById("event-name").value.trim();
+
+  if (!publishAtRaw) {
+    throw new Error("Choose a publish date and time for scheduled posts.");
+  }
+
+  const publishAt = new Date(publishAtRaw);
+  if (Number.isNaN(publishAt.getTime())) {
+    throw new Error("Invalid publish date and time.");
+  }
+  if (publishAt.getTime() <= Date.now()) {
+    throw new Error("Scheduled time must be in the future.");
+  }
+
+  return { publishAt: publishAt.toISOString(), eventName };
+}
+
+function formatScheduleDisplay(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return isoString;
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function base64ToText(b64) {
+  const bytes = Uint8Array.from(atob(b64.replace(/\s/g, "")), (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function updateStepNavLabel() {
+  const label = document.getElementById("step-3-label");
+  const scheduled = isScheduledMode() || Boolean(draft?.publishAt);
+  label.textContent = scheduled ? "3. Schedule" : "3. Publish";
+}
+
 async function api(config, path, options = {}) {
   const response = await fetch(`https://api.github.com${path}`, {
     ...options,
@@ -259,7 +323,7 @@ function buildPostYaml(draft) {
   const post = {
     id: draft.id,
     status: "review",
-    publish_at: "",
+    publish_at: draft.publishAt || "",
     platforms: draft.platforms,
     title: draft.title,
     caption: draft.caption,
@@ -267,6 +331,10 @@ function buildPostYaml(draft) {
     media: {},
     created_at: new Date().toISOString(),
   };
+
+  if (draft.eventName) {
+    post.event_name = draft.eventName;
+  }
 
   if (draft.mediaType === "video") {
     post.media.video = draft.mediaPath;
@@ -290,8 +358,16 @@ function renderPreview(container, draft, mediaUrl) {
     mediaHtml = `<img src="${mediaUrl}" alt="Post media" />`;
   }
 
+  const scheduleTag = draft.publishAt
+    ? `<span class="tag scheduled">Scheduled: ${escapeHtml(formatScheduleDisplay(draft.publishAt))}</span>`
+    : "";
+  const eventLine = draft.eventName
+    ? `<p class="hint"><strong>Event:</strong> ${escapeHtml(draft.eventName)}</p>`
+    : "";
+
   container.innerHTML = `
-    <div class="preview-meta">${platformTags}</div>
+    <div class="preview-meta">${platformTags}${scheduleTag}</div>
+    ${eventLine}
     <h3>${escapeHtml(draft.title)}</h3>
     <p class="caption-text">${escapeHtml(draft.caption)}</p>
     ${tags ? `<p class="hashtags">${escapeHtml(tags)}</p>` : ""}
@@ -312,6 +388,7 @@ function validateDraftInput() {
   const fileInput = document.getElementById("media-file");
   const platforms = selectedPlatforms();
   const file = fileInput.files?.[0];
+  const schedule = readScheduleFromForm();
 
   if (!title) throw new Error("Enter a title.");
   if (!caption) throw new Error("Enter a caption.");
@@ -334,8 +411,157 @@ function validateDraftInput() {
     file,
     mediaType,
     mediaPath: `media/${id}${ext}`,
+    publishAt: schedule.publishAt,
+    eventName: schedule.eventName,
     saved: false,
   };
+}
+
+function updatePublishStepUI() {
+  const scheduled = Boolean(draft?.publishAt);
+  const heading = document.getElementById("publish-heading");
+  const hint = document.getElementById("publish-hint");
+  const summary = document.getElementById("schedule-summary");
+  const publishBtn = document.getElementById("publish-btn");
+
+  if (scheduled) {
+    heading.textContent = "3. Schedule";
+    hint.textContent =
+      "Dry run verifies your post. Uncheck it to approve the schedule — the post will go live automatically when the date arrives.";
+    summary.classList.remove("hidden");
+    summary.innerHTML = `<strong>Scheduled for:</strong> ${escapeHtml(formatScheduleDisplay(draft.publishAt))}${
+      draft.eventName ? ` · <strong>Event:</strong> ${escapeHtml(draft.eventName)}` : ""
+    }`;
+    publishBtn.textContent = "Schedule post";
+  } else {
+    heading.textContent = "3. Publish";
+    hint.textContent = "Dry run checks everything without posting. Uncheck it to go live.";
+    summary.classList.add("hidden");
+    summary.innerHTML = "";
+    publishBtn.textContent = "Publish to social media";
+  }
+
+  updateStepNavLabel();
+}
+
+function toggleScheduleFields() {
+  const scheduled = isScheduledMode();
+  document.getElementById("schedule-fields").classList.toggle("hidden", !scheduled);
+  if (scheduled && !document.getElementById("publish-at").value) {
+    document.getElementById("publish-at").value = defaultScheduleDatetime();
+  }
+  updateStepNavLabel();
+}
+
+async function fetchScheduledPosts(config) {
+  let contents;
+  try {
+    contents = await api(
+      config,
+      `/repos/${config.owner}/${config.repo}/contents/content/posts?ref=${encodeURIComponent(config.branch)}`
+    );
+  } catch (error) {
+    if (String(error.message).includes("404")) return [];
+    throw error;
+  }
+
+  if (!Array.isArray(contents)) return [];
+
+  const yamlEntries = contents.filter(
+    (entry) => entry.name.endsWith(".yaml") && !entry.name.endsWith(".published.yaml")
+  );
+
+  const details = await Promise.all(
+    yamlEntries.map((entry) =>
+      api(
+        config,
+        `/repos/${config.owner}/${config.repo}/contents/${entry.path}?ref=${encodeURIComponent(config.branch)}`
+      )
+    )
+  );
+
+  const posts = [];
+  for (const detail of details) {
+    const post = window.jsyaml.load(base64ToText(detail.content));
+    if (!post?.publish_at) continue;
+
+    const due = Date.parse(post.publish_at);
+    if (!Number.isFinite(due) || due <= Date.now()) continue;
+    if (post.status !== "pending" && post.status !== "review") continue;
+
+    posts.push({
+      id: post.id,
+      title: post.title || post.id,
+      eventName: post.event_name || "",
+      publishAt: post.publish_at,
+      status: post.status,
+      platforms: post.platforms || [],
+      due,
+    });
+  }
+
+  return posts.sort((a, b) => a.due - b.due);
+}
+
+function renderScheduledList(posts) {
+  const list = document.getElementById("scheduled-list");
+  const empty = document.getElementById("scheduled-empty");
+
+  if (!posts.length) {
+    list.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+
+  empty.classList.add("hidden");
+  list.innerHTML = posts
+    .map(
+      (post) => `
+    <article class="scheduled-item" role="listitem">
+      <div>
+        <p class="scheduled-item-title">${escapeHtml(post.title)}</p>
+        <p class="scheduled-item-meta">
+          ${post.eventName ? `${escapeHtml(post.eventName)} · ` : ""}${escapeHtml(post.id)}
+        </p>
+      </div>
+      <div class="scheduled-item-side">
+        <p class="scheduled-item-date">${escapeHtml(formatScheduleDisplay(post.publishAt))}</p>
+        <span class="scheduled-item-status ${post.status === "review" ? "review" : ""}">${post.status === "review" ? "Awaiting approval" : "Approved"}</span>
+      </div>
+    </article>
+  `
+    )
+    .join("");
+}
+
+async function refreshScheduledPosts() {
+  const config = getConfigFromForm();
+  const btn = document.getElementById("refresh-scheduled");
+  const empty = document.getElementById("scheduled-empty");
+  hideStatus("scheduled-status");
+
+  if (!config.token) {
+    renderScheduledList([]);
+    empty.textContent = "Save your GitHub token in settings to see scheduled posts.";
+    return;
+  }
+
+  setButtonLoading(btn, true);
+  try {
+    const posts = await fetchScheduledPosts(config);
+    renderScheduledList(posts);
+    if (posts.length === 0) {
+      empty.textContent = "No upcoming scheduled posts.";
+    }
+    if (posts.length > 0) {
+      document.getElementById("scheduled-section").open = true;
+      setStatus("scheduled-status", `${posts.length} upcoming post${posts.length === 1 ? "" : "s"} found.`, "ok");
+    }
+  } catch (error) {
+    setStatus("scheduled-status", error.message, "error");
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 
 let draft = null;
@@ -411,6 +637,7 @@ document.getElementById("save-config").addEventListener("click", () => {
   saveConfig(config);
   updateConnectionBadge();
   setStatus("config-status", "Settings saved in this browser.", "ok");
+  refreshScheduledPosts();
 });
 
 document.getElementById("toggle-token").addEventListener("click", () => {
@@ -423,6 +650,16 @@ document.getElementById("toggle-token").addEventListener("click", () => {
 });
 
 document.getElementById("caption").addEventListener("input", updateCaptionCount);
+
+document.querySelectorAll('input[name="publish-timing"]').forEach((input) => {
+  input.addEventListener("change", toggleScheduleFields);
+});
+
+document.getElementById("refresh-scheduled").addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  refreshScheduledPosts();
+});
 
 document.getElementById("browse-btn").addEventListener("click", (event) => {
   event.stopPropagation();
@@ -533,7 +770,14 @@ document.getElementById("save-btn").addEventListener("click", async () => {
     saveDraft({ ...draft, fileName: draft.file.name, file: null });
 
     showStep(3);
-    setStatus("review-status", "Saved to GitHub. Ready to publish.", "ok");
+    updatePublishStepUI();
+    setStatus(
+      "review-status",
+      draft.publishAt
+        ? "Saved to GitHub. Ready to schedule."
+        : "Saved to GitHub. Ready to publish.",
+      "ok"
+    );
   } catch (error) {
     setStatus("review-status", error.message, "error");
   } finally {
@@ -550,8 +794,16 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
 
   const dryRun = document.getElementById("dry-run").checked;
   const btn = document.getElementById("publish-btn");
+  const scheduled = Boolean(draft.publishAt);
   setButtonLoading(btn, true);
-  setStatus("publish-status", dryRun ? "Running dry run…" : "Publishing to your platforms…");
+  setStatus(
+    "publish-status",
+    dryRun
+      ? "Running dry run…"
+      : scheduled
+        ? "Approving schedule…"
+        : "Publishing to your platforms…"
+  );
 
   try {
     const startedAt = new Date();
@@ -564,10 +816,22 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
     setStatus(
       "publish-status",
       dryRun
-        ? "Dry run passed. Uncheck dry run and publish again to go live."
-        : "Published to your selected platforms.",
+        ? scheduled
+          ? "Dry run passed. Uncheck dry run and schedule again to confirm."
+          : "Dry run passed. Uncheck dry run and publish again to go live."
+        : scheduled
+          ? `Scheduled for ${formatScheduleDisplay(draft.publishAt)}. It will publish automatically when due.`
+          : "Published to your selected platforms.",
       "ok"
     );
+    if (!dryRun && scheduled) {
+      sessionStorage.removeItem(SESSION_KEY);
+      draft = null;
+      refreshScheduledPosts();
+    } else if (!dryRun && !scheduled) {
+      sessionStorage.removeItem(SESSION_KEY);
+      draft = null;
+    }
   } catch (error) {
     setStatus("publish-status", error.message, "error");
   } finally {
@@ -596,12 +860,29 @@ window.addEventListener("DOMContentLoaded", () => {
     PLATFORMS.forEach((platform) => {
       document.getElementById(`platform-${platform}`).checked = (saved.platforms || []).includes(platform);
     });
+    if (saved.publishAt) {
+      document.getElementById("publish-scheduled").checked = true;
+      document.getElementById("publish-immediate").checked = false;
+      document.getElementById("publish-at").value = toDatetimeLocalValue(new Date(saved.publishAt));
+      document.getElementById("event-name").value = saved.eventName || "";
+      toggleScheduleFields();
+    }
     renderPreview(
       document.getElementById("preview"),
       saved,
       `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/${saved.mediaPath}?t=${Date.now()}`
     );
     showStep(3);
-    setStatus("review-status", `Restored saved post "${saved.id}". You can publish again.`, "ok");
+    updatePublishStepUI();
+    setStatus(
+      "review-status",
+      saved.publishAt
+        ? `Restored scheduled post "${saved.id}". You can confirm the schedule.`
+        : `Restored saved post "${saved.id}". You can publish again.`,
+      "ok"
+    );
   }
+
+  toggleScheduleFields();
+  refreshScheduledPosts();
 });

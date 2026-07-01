@@ -9,7 +9,8 @@
 
 id: example-welcome
 status: draft
-publish_at: ""
+publish_at: ""   # ISO 8601 datetime for scheduled posts, e.g. 2026-11-12T09:00:00+05:30
+# event_name: Diwali offer   # optional label for business events (set via Social Studio)
 platforms:
   - facebook
   - instagram

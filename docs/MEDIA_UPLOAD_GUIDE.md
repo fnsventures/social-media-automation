@@ -206,7 +206,7 @@ Social Studio  →  GitHub repository  →  GitHub Actions  →  Social platform
 | Workflow | When it runs | Purpose |
 |----------|--------------|---------|
 | **Approve and Publish** | When you click Publish in Social Studio | Verify, approve, and publish a single post |
-| **Publish Social Posts** | Daily at 9:00 AM IST (and manual trigger) | Publishes scheduled `pending` posts |
+| **Publish Social Posts** | Daily at 6:00 AM IST (and manual trigger) | Publishes scheduled `pending` posts |
 
 You can monitor progress at:
 

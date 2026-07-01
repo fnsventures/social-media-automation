@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { approvePost, findPostById, markPostPublished, savePostResults } from "./lib/content.js";
+import { approvePost, findPostById, isDue, markPostPublished, savePostResults } from "./lib/content.js";
 import { parseArgs } from "./lib/cli.js";
 import { platformConfigured } from "./lib/config.js";
 import { whatsappAuthArchiveValid } from "./lib/whatsapp-auth-archive.js";
@@ -91,6 +91,13 @@ async function main() {
   }
 
   await verifyCredentialsForPost(toPublish);
+
+  if (!args.dryRun && toPublish.publishAt && !isDue(toPublish)) {
+    console.log(
+      `Post ${toPublish.id} is scheduled for ${toPublish.publishAt}. Approved and waiting — will publish automatically when due.`
+    );
+    process.exit(0);
+  }
 
   const results = await publishPost(toPublish, args.dryRun);
   const successes = results.filter((r) => r.ok && !r.dryRun);

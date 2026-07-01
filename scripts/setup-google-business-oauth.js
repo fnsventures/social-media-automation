@@ -192,7 +192,7 @@ async function chooseLocation(auth) {
     console.log(`  ${location.name}`);
   }
 
-  return location.name;
+  return `${account.name}/${location.name}`;
 }
 
 async function main() {
