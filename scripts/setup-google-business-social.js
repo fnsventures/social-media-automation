@@ -216,12 +216,16 @@ function buildPlannedLinks(urls) {
 }
 
 function saveDiscoveredUrls(urls) {
+  const saved = [];
   if (urls.facebook && !readEnv("GOOGLE_BUSINESS_FACEBOOK_URL")) {
     upsertEnvValue("GOOGLE_BUSINESS_FACEBOOK_URL", urls.facebook);
+    saved.push(`GOOGLE_BUSINESS_FACEBOOK_URL=${urls.facebook}`);
   }
   if (urls.instagram && !readEnv("GOOGLE_BUSINESS_INSTAGRAM_URL")) {
     upsertEnvValue("GOOGLE_BUSINESS_INSTAGRAM_URL", urls.instagram);
+    saved.push(`GOOGLE_BUSINESS_INSTAGRAM_URL=${urls.instagram}`);
   }
+  return saved;
 }
 
 async function verifyGoogleAccess() {
@@ -232,7 +236,9 @@ async function verifyGoogleAccess() {
     if (wrapped.type === "google_business") {
       const fixed = await offerGoogleBusinessFix({ fix: ARGS.fix, askYesNo });
       if (fixed) return verifyGoogleBusinessCredentials();
-      printGoogleBusinessRecovery({ apiDisabled: wrapped.apiDisabled });
+      if (!ARGS.fix) {
+        printGoogleBusinessRecovery({ apiDisabled: wrapped.apiDisabled });
+      }
     }
     throw error;
   }
@@ -348,7 +354,7 @@ async function main() {
     }
   }
 
-  saveDiscoveredUrls(urls);
+  const savedEnvLines = saveDiscoveredUrls(urls);
   await updateLocationSocialLinks(Object.fromEntries(planned));
 
   const saved = await getLocationSocialLinks();
@@ -366,10 +372,9 @@ async function main() {
       "  • Run npm run setup:google-business-social -- --check anytime to verify links\n"
   );
 
-  if (urls.detectedFromMeta) {
-    console.log("  Saved detected URLs to .env (if not already set):\n");
-    if (urls.facebook) console.log(`    GOOGLE_BUSINESS_FACEBOOK_URL=${urls.facebook}`);
-    if (urls.instagram) console.log(`    GOOGLE_BUSINESS_INSTAGRAM_URL=${urls.instagram}`);
+  if (savedEnvLines.length) {
+    console.log("  Saved detected URLs to .env:\n");
+    for (const line of savedEnvLines) console.log(`    ${line}`);
     console.log("");
   }
 }

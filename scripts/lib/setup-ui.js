@@ -2,11 +2,13 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 export function parseSetupArgs(argv = process.argv.slice(2)) {
+  const args = argv.filter((arg) => arg !== "--");
   return {
-    checkOnly: argv.includes("--check"),
-    yes: argv.includes("--yes") || argv.includes("-y"),
-    fix: argv.includes("--fix"),
-    help: argv.includes("--help") || argv.includes("-h"),
+    checkOnly: args.includes("--check"),
+    yes: args.includes("--yes") || args.includes("-y"),
+    fix: args.includes("--fix"),
+    json: args.includes("--json"),
+    help: args.includes("--help") || args.includes("-h"),
   };
 }
 

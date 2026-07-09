@@ -125,10 +125,8 @@ export function isYoutubeTokenError(error) {
 
 export function isWhatsAppSessionError(error) {
   const message = messageFromError(error);
-  return (
-    /WhatsApp auth|session|logged out|connection closed|QR|WHATSAPP_AUTH|not configured|invalid/i.test(
-      message
-    )
+  return /WhatsApp auth|WHATSAPP_AUTH|linked.device|logged out|connection closed|QR/i.test(
+    message
   );
 }
 
@@ -300,7 +298,6 @@ export async function offerPlatformFix(platform, { fix, askYesNo }) {
   const label = recovery.label ?? platform;
 
   if (!fix) {
-    printRecoveryForPlatform(platform === "meta" ? "meta" : recovery.id ?? platform);
     return false;
   }
 
@@ -332,7 +329,6 @@ export async function offerGoogleBusinessFix({ fix, askYesNo }) {
 
 export async function offerMetaFix({ fix, askYesNo, ask }) {
   if (!fix) {
-    printMetaRecovery();
     return null;
   }
 
