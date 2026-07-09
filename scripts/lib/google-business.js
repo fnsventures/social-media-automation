@@ -2,7 +2,17 @@ import { google } from "googleapis";
 import { config } from "./config.js";
 
 const MYBUSINESS_BASE = "https://mybusiness.googleapis.com/v4";
+const BUSINESS_INFO_BASE = "https://mybusinessbusinessinformation.googleapis.com/v1";
 const SUMMARY_MAX = 1500;
+
+export const SOCIAL_URL_ATTRIBUTES = {
+  facebook: "attributes/url_facebook",
+  instagram: "attributes/url_instagram",
+  youtube: "attributes/url_youtube",
+  linkedin: "attributes/url_linkedin",
+  pinterest: "attributes/url_pinterest",
+  twitter: "attributes/url_twitter",
+};
 
 function createOAuth2Client() {
   const { clientId, clientSecret, refreshToken } = config.googleBusiness;
@@ -42,6 +52,66 @@ function normalizeLocationName(locationName) {
   throw new Error(
     "GOOGLE_BUSINESS_LOCATION_NAME must look like accounts/{accountId}/locations/{locationId}."
   );
+}
+
+function getLocationId() {
+  const parent = normalizeLocationName(config.googleBusiness.locationName);
+  return parent.split("/locations/").pop();
+}
+
+function buildUriAttribute(attributeName, uri) {
+  return {
+    name: attributeName,
+    values: [],
+    uriValues: [{ uri }],
+  };
+}
+
+export async function getLocationSocialLinks() {
+  const oauth2 = createOAuth2Client();
+  const locationId = getLocationId();
+
+  const response = await oauth2.request({
+    url: `${BUSINESS_INFO_BASE}/locations/${locationId}/attributes`,
+  });
+
+  const attributes = response.data?.attributes ?? [];
+  const socialNames = new Set(Object.values(SOCIAL_URL_ATTRIBUTES));
+  const links = {};
+
+  for (const attribute of attributes) {
+    if (!socialNames.has(attribute.name)) continue;
+    const uri = attribute.uriValues?.[0]?.uri;
+    if (uri) links[attribute.name] = uri;
+  }
+
+  return links;
+}
+
+export async function updateLocationSocialLinks(links) {
+  const entries = Object.entries(links).filter(([, uri]) => Boolean(uri?.trim()));
+  if (entries.length === 0) {
+    throw new Error("No social profile URLs provided to update.");
+  }
+
+  const oauth2 = createOAuth2Client();
+  const locationId = getLocationId();
+  const attributes = entries.map(([attributeName, uri]) =>
+    buildUriAttribute(attributeName, uri.trim())
+  );
+  const attributeMask = attributes.map((attribute) => attribute.name).join(",");
+
+  const response = await oauth2.request({
+    url: `${BUSINESS_INFO_BASE}/locations/${locationId}/attributes`,
+    method: "PATCH",
+    params: { attributeMask },
+    data: {
+      name: `locations/${locationId}/attributes`,
+      attributes,
+    },
+  });
+
+  return response.data?.attributes ?? [];
 }
 
 export async function publishToGoogleBusiness(post) {
