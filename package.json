@@ -14,6 +14,7 @@
     "setup:youtube": "node scripts/setup-youtube-oauth.js",
     "setup:youtube-cookies": "node scripts/setup-youtube-cookies.js",
     "setup:google-business": "node scripts/setup-google-business-oauth.js",
+    "setup:google-business-social": "node scripts/setup-google-business-social.js",
     "setup:whatsapp": "node scripts/setup-whatsapp.js",
     "setup:whatsapp:qr": "node scripts/setup-whatsapp.js -- --qr --fresh",
     "export:whatsapp-auth": "node scripts/export-whatsapp-auth.js",
