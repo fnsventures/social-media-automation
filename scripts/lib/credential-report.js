@@ -29,10 +29,13 @@ export function buildCredentialReport({
 }) {
   const platforms = {};
   for (const [name, status] of Object.entries(results)) {
+    const normalizedStatus = status === "configured" ? "missing" : status;
     platforms[name] = {
-      status,
+      status: normalizedStatus,
       label: PLATFORM_LABELS[name] ?? name,
-      message: messages[name] ?? "",
+      message:
+        messages[name] ??
+        (status === "configured" ? "Credentials incomplete — finish platform setup" : ""),
       error: messageFromError(errors[name]),
     };
   }

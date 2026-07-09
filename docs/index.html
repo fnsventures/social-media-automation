@@ -7,7 +7,6 @@
   <meta name="description" content="Upload, review, and publish social posts to Facebook, Instagram, YouTube, and WhatsApp Status." />
   <title>Bishnupriya Fuels — Social Studio</title>
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js"></script>
 </head>
 <body>
   <header>
@@ -25,75 +24,20 @@
 
   <main>
     <nav class="steps" aria-label="Post workflow">
-      <span class="step active" id="step-1" data-step="1">1. Upload</span>
+      <button class="step active" id="step-1" type="button" data-step="1" aria-current="step">1. Upload</button>
       <span class="step-connector" aria-hidden="true"></span>
-      <span class="step" id="step-2" data-step="2">2. Review</span>
+      <button class="step" id="step-2" type="button" data-step="2" disabled>2. Review</button>
       <span class="step-connector" aria-hidden="true"></span>
-      <span class="step" id="step-3" data-step="3"><span id="step-3-label">3. Publish</span></span>
+      <button class="step" id="step-3" type="button" data-step="3" disabled><span id="step-3-label">3. Publish</span></button>
     </nav>
 
-    <details class="card settings">
-      <summary>GitHub connection</summary>
-      <p class="hint">
-        Personal Access Token with <strong>Contents: Read and write</strong> and
-        <strong>Actions: Read and write</strong>. Stored in this browser only.
-      </p>
-      <div class="row">
-        <div>
-          <label for="github-owner">GitHub owner</label>
-          <input id="github-owner" value="fnsventures" autocomplete="off" />
-        </div>
-        <div>
-          <label for="github-repo">Repository</label>
-          <input id="github-repo" value="social-media-automation" autocomplete="off" />
-        </div>
+    <div class="setup-banner hidden" id="setup-banner" role="region" aria-label="Setup required">
+      <div class="setup-banner-body">
+        <p class="setup-banner-title">Connect GitHub to get started</p>
+        <p class="setup-banner-text">Add your personal access token once — it stays in this browser. You need it to save posts and publish.</p>
       </div>
-      <div class="row">
-        <div>
-          <label for="github-branch">Branch</label>
-          <input id="github-branch" value="studio" autocomplete="off" />
-          <p class="hint">Use <strong>studio</strong> for uploads. <code>master</code> is protected and blocks direct saves.</p>
-        </div>
-        <div>
-          <label for="github-token">GitHub token</label>
-          <div class="input-with-action">
-            <input id="github-token" type="password" placeholder="github_pat_..." autocomplete="off" />
-            <button class="icon-btn" id="toggle-token" type="button" aria-label="Show token">Show</button>
-          </div>
-        </div>
-      </div>
-      <button class="btn btn-secondary" id="save-config" type="button">Save settings</button>
-      <div id="config-status" class="status hidden" role="status"></div>
-    </details>
-
-    <details class="card credentials-panel" id="credentials-section">
-      <summary class="section-header">
-        <div class="credentials-title-wrap">
-          <h2>Credential health</h2>
-          <span id="credentials-health-badge" class="credentials-health-badge hidden" aria-hidden="true"></span>
-        </div>
-        <button class="btn btn-secondary btn-sm" id="credentials-check-btn" type="button">Check credentials</button>
-      </summary>
-      <p class="hint">
-        Verifies your GitHub token and all posting credentials. If something expired, follow the fix steps — copy a command, run it on your computer, update GitHub Secrets, then re-check.
-      </p>
-      <div id="credentials-progress" class="credentials-progress hidden" aria-live="polite"></div>
-      <div id="credentials-stats" class="credentials-stats hidden" aria-label="Credential summary"></div>
-      <p id="credentials-summary" class="credentials-summary">Connect GitHub in settings, then check credentials.</p>
-      <div id="credentials-results" class="credentials-results"></div>
-      <div id="credentials-status" class="status hidden" role="status"></div>
-    </details>
-
-    <details class="card scheduled-panel" id="scheduled-section" open>
-      <summary class="section-header">
-        <h2>Upcoming scheduled posts</h2>
-        <button class="btn btn-secondary btn-sm" id="refresh-scheduled" type="button">Refresh</button>
-      </summary>
-      <p class="hint">Posts scheduled for future events. They publish automatically when the date arrives.</p>
-      <div id="scheduled-list" class="scheduled-list" role="list"></div>
-      <p class="hint scheduled-empty" id="scheduled-empty">Connect GitHub and click Refresh to see scheduled posts.</p>
-      <div id="scheduled-status" class="status hidden" role="status"></div>
-    </details>
+      <button class="btn btn-primary btn-sm" id="open-settings-btn" type="button">Set up connection</button>
+    </div>
 
     <section class="card" id="upload-section">
       <h2>1. Upload post</h2>
@@ -210,8 +154,75 @@
         </span>
       </label>
       <button class="btn btn-primary btn-block" id="publish-btn" type="button">Publish to social media</button>
+      <div id="publish-progress" class="publish-progress hidden" aria-live="polite"></div>
       <div id="publish-status" class="status hidden" role="status"></div>
+      <div class="success-actions hidden" id="success-actions">
+        <button class="btn btn-primary btn-block" id="new-post-btn" type="button">Create another post</button>
+      </div>
     </section>
+
+    <details class="card scheduled-panel" id="scheduled-section">
+      <summary class="section-header">
+        <h2>Upcoming scheduled posts</h2>
+        <button class="btn btn-secondary btn-sm" id="refresh-scheduled" type="button">Refresh</button>
+      </summary>
+      <p class="hint">Posts scheduled for future events. They publish automatically when the date arrives.</p>
+      <div id="scheduled-list" class="scheduled-list" role="list"></div>
+      <p class="hint scheduled-empty" id="scheduled-empty">Connect GitHub and click Refresh to see scheduled posts.</p>
+      <div id="scheduled-status" class="status hidden" role="status"></div>
+    </details>
+
+    <details class="card credentials-panel" id="credentials-section">
+      <summary class="section-header">
+        <div class="credentials-title-wrap">
+          <h2>Credential health</h2>
+          <span id="credentials-health-badge" class="credentials-health-badge hidden" aria-hidden="true"></span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="credentials-check-btn" type="button">Check credentials</button>
+      </summary>
+      <p class="hint">
+        Verifies your GitHub token and all posting credentials. If something expired, follow the fix steps — copy a command, run it on your computer, update GitHub Secrets, then re-check.
+      </p>
+      <div id="credentials-progress" class="credentials-progress hidden" aria-live="polite"></div>
+      <div id="credentials-stats" class="credentials-stats hidden" aria-label="Credential summary"></div>
+      <p id="credentials-summary" class="credentials-summary">Connect GitHub in settings, then check credentials.</p>
+      <div id="credentials-results" class="credentials-results"></div>
+      <div id="credentials-status" class="status hidden" role="status"></div>
+    </details>
+
+    <details class="card settings" id="settings-section">
+      <summary>GitHub connection</summary>
+      <p class="hint">
+        Personal Access Token with <strong>Contents: Read and write</strong> and
+        <strong>Actions: Read and write</strong>. Stored in this browser only.
+      </p>
+      <div class="row">
+        <div>
+          <label for="github-owner">GitHub owner</label>
+          <input id="github-owner" value="fnsventures" autocomplete="off" />
+        </div>
+        <div>
+          <label for="github-repo">Repository</label>
+          <input id="github-repo" value="social-media-automation" autocomplete="off" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="github-branch">Branch</label>
+          <input id="github-branch" value="studio" autocomplete="off" />
+          <p class="hint">Use <strong>studio</strong> for uploads. <code>master</code> is protected and blocks direct saves.</p>
+        </div>
+        <div>
+          <label for="github-token">GitHub token</label>
+          <div class="input-with-action">
+            <input id="github-token" type="password" placeholder="github_pat_..." autocomplete="off" />
+            <button class="icon-btn" id="toggle-token" type="button" aria-label="Show token">Show</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-secondary" id="save-config" type="button">Save settings</button>
+      <div id="config-status" class="status hidden" role="status"></div>
+    </details>
   </main>
 
   <footer>
@@ -220,8 +231,8 @@
     <a href="https://bishnupriyafuels.fnsventures.in/">Bishnupriya Fuels</a>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
-  <script src="credentials.js"></script>
-  <script src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js"></script>
+  <script defer src="credentials.js"></script>
+  <script defer src="app.js"></script>
 </body>
 </html>

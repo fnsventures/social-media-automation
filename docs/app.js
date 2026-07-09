@@ -12,6 +12,20 @@ const PLATFORM_LABELS = {
   google_business: "Google Business",
 };
 const SESSION_KEY = "sm-draft";
+const SCHEDULED_CACHE_KEY = "sm-scheduled-cache";
+const SCHEDULED_CACHE_TTL_MS = 60_000;
+
+const $ = (id) => document.getElementById(id);
+
+function repoApiBase(config) {
+  return `/repos/${config.owner}/${config.repo}`;
+}
+
+function pollDelay(attempt) {
+  if (attempt < 5) return 2000;
+  if (attempt < 15) return 3000;
+  return 4000;
+}
 
 function loadConfig() {
   const saved = JSON.parse(localStorage.getItem("sm-config") || "{}");
@@ -75,7 +89,7 @@ function formatFileSize(bytes) {
 }
 
 function isScheduledMode() {
-  return document.getElementById("publish-scheduled").checked;
+  return $("publish-scheduled").checked;
 }
 
 function defaultScheduleDatetime() {
@@ -133,9 +147,36 @@ function base64ToText(b64) {
 }
 
 function updateStepNavLabel() {
-  const label = document.getElementById("step-3-label");
-  const scheduled = isScheduledMode() || Boolean(draft?.publishAt);
-  label.textContent = scheduled ? "3. Schedule" : "3. Publish";
+  $("step-3-label").textContent =
+    isScheduledMode() || Boolean(draft?.publishAt) ? "3. Schedule" : "3. Publish";
+}
+
+function parseApiError(message) {
+  const raw = String(message ?? "");
+  const jsonMatch = raw.match(/^\d+:\s*(\{[\s\S]*\})$/);
+  if (jsonMatch) {
+    try {
+      const data = JSON.parse(jsonMatch[1]);
+      if (data.message) return data.message;
+    } catch {
+      // fall through
+    }
+  }
+  return raw.replace(/^\d+:\s*/, "");
+}
+
+function friendlyApiError(message) {
+  const text = parseApiError(message);
+  if (text.includes("Bad credentials") || text.includes("401")) {
+    return "GitHub token is invalid or expired. Update it in GitHub connection settings.";
+  }
+  if (text.includes("Resource not accessible") || text.includes("403")) {
+    return "Token lacks permission. Ensure it has repo and workflow scopes.";
+  }
+  if (text.includes("Changes must be made through a pull request") || text.includes("409")) {
+    return "This branch is protected. Set Branch to studio (not master) in GitHub connection.";
+  }
+  return text;
 }
 
 async function api(config, path, options = {}) {
@@ -149,7 +190,7 @@ async function api(config, path, options = {}) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`${response.status}: ${text}`);
+    throw new Error(friendlyApiError(`${response.status}: ${text}`));
   }
 
   if (response.status === 204) return null;
@@ -157,40 +198,59 @@ async function api(config, path, options = {}) {
 }
 
 async function dispatchWorkflow(config, inputs) {
-  await api(
-    config,
-    `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_PUBLISH}/dispatches`,
-    {
-      method: "POST",
-      body: JSON.stringify({ ref: config.branch, inputs }),
-    }
-  );
+  await api(config, `${repoApiBase(config)}/actions/workflows/${WORKFLOW_PUBLISH}/dispatches`, {
+    method: "POST",
+    body: JSON.stringify({ ref: config.branch, inputs }),
+  });
 }
 
-async function waitForWorkflow(config, startedAfter) {
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    const data = await api(
-      config,
-      `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_PUBLISH}/runs?per_page=10`
-    );
+async function waitForDispatchedRun(
+  config,
+  workflowFile,
+  startedAfter,
+  onProgress,
+  maxAttempts = 90,
+  failureLabel = "Workflow"
+) {
+  const base = repoApiBase(config);
+  let runId = null;
 
-    const run = data.workflow_runs.find(
-      (entry) =>
-        entry.event === "workflow_dispatch" &&
-        new Date(entry.created_at) >= startedAfter
-    );
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const run = runId
+      ? await api(config, `${base}/actions/runs/${runId}`)
+      : (await api(config, `${base}/actions/workflows/${workflowFile}/runs?per_page=5`))
+          .workflow_runs.find(
+            (entry) =>
+              entry.event === "workflow_dispatch" &&
+              new Date(entry.created_at) >= startedAfter
+          );
 
-    if (run?.status === "completed") {
-      if (run.conclusion !== "success") {
-        throw new Error(`Publish workflow failed: ${run.html_url}`);
+    if (run) {
+      runId = run.id;
+      onProgress?.(run, attempt);
+      if (run.status === "completed") {
+        if (run.conclusion !== "success") {
+          throw new Error(`${failureLabel} failed: ${run.html_url}`);
+        }
+        return run;
       }
-      return run;
     }
 
-    await sleep(4000);
+    await sleep(pollDelay(attempt));
   }
 
-  throw new Error("Timed out waiting for publish workflow.");
+  throw new Error(`Timed out waiting for ${failureLabel.toLowerCase()}. Check GitHub Actions for status.`);
+}
+
+async function waitForWorkflow(config, startedAfter, onProgress) {
+  return waitForDispatchedRun(
+    config,
+    WORKFLOW_PUBLISH,
+    startedAfter,
+    onProgress,
+    90,
+    "Publish workflow"
+  );
 }
 
 function fileToBase64(file) {
@@ -207,31 +267,26 @@ function textToBase64(text) {
 }
 
 async function uploadFile(config, repoPath, base64Content, message) {
+  const base = repoApiBase(config);
+  const ref = encodeURIComponent(config.branch);
   let sha;
   try {
-    const existing = await api(
-      config,
-      `/repos/${config.owner}/${config.repo}/contents/${repoPath}?ref=${encodeURIComponent(config.branch)}`
-    );
+    const existing = await api(config, `${base}/contents/${repoPath}?ref=${ref}`);
     sha = existing.sha;
   } catch (error) {
     if (!String(error.message).includes("404")) throw error;
   }
 
   try {
-    await api(
-      config,
-      `/repos/${config.owner}/${config.repo}/contents/${repoPath}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          message,
-          content: base64Content,
-          branch: config.branch,
-          ...(sha ? { sha } : {}),
-        }),
-      }
-    );
+    await api(config, `${base}/contents/${repoPath}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        message,
+        content: base64Content,
+        branch: config.branch,
+        ...(sha ? { sha } : {}),
+      }),
+    });
   } catch (error) {
     if (String(error.message).includes("Changes must be made through a pull request")) {
       throw new Error(
@@ -244,11 +299,45 @@ async function uploadFile(config, repoPath, base64Content, message) {
 
 function getConfigFromForm() {
   return {
-    token: document.getElementById("github-token").value.trim(),
-    owner: document.getElementById("github-owner").value.trim() || DEFAULTS.owner,
-    repo: document.getElementById("github-repo").value.trim() || DEFAULTS.repo,
-    branch: document.getElementById("github-branch").value.trim() || DEFAULTS.branch,
+    token: $("github-token").value.trim(),
+    owner: $("github-owner").value.trim() || DEFAULTS.owner,
+    repo: $("github-repo").value.trim() || DEFAULTS.repo,
+    branch: $("github-branch").value.trim() || DEFAULTS.branch,
   };
+}
+
+function configCacheKey(config) {
+  return `${config.owner}/${config.repo}@${config.branch}`;
+}
+
+function loadScheduledCache(config) {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(SCHEDULED_CACHE_KEY) || "null");
+    if (!cached || cached.key !== configCacheKey(config)) return null;
+    if (Date.now() - cached.at > SCHEDULED_CACHE_TTL_MS) return null;
+    return cached.posts;
+  } catch {
+    return null;
+  }
+}
+
+function saveScheduledCache(config, posts) {
+  try {
+    sessionStorage.setItem(
+      SCHEDULED_CACHE_KEY,
+      JSON.stringify({ key: configCacheKey(config), at: Date.now(), posts })
+    );
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function invalidateScheduledCache() {
+  sessionStorage.removeItem(SCHEDULED_CACHE_KEY);
+}
+
+function rawMediaUrl(config, mediaPath) {
+  return `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/${mediaPath}`;
 }
 
 function selectedPlatforms() {
@@ -274,16 +363,27 @@ function setStatus(elementId, message, type = "") {
 
 function setStep(step) {
   document.querySelectorAll(".step").forEach((node, index) => {
+    const stepNum = index + 1;
     node.classList.remove("active", "done");
-    if (index + 1 < step) node.classList.add("done");
-    if (index + 1 === step) node.classList.add("active");
+    node.removeAttribute("aria-current");
+    if (stepNum < step) node.classList.add("done");
+    if (stepNum === step) {
+      node.classList.add("active");
+      node.setAttribute("aria-current", "step");
+    }
   });
+  updateStepButtons(step);
+}
+
+function updateStepButtons(currentStep) {
+  $("step-2").disabled = currentStep < 2 && !draft;
+  $("step-3").disabled = !draft?.saved;
 }
 
 function showStep(step) {
-  document.getElementById("upload-section").classList.toggle("hidden", step !== 1);
-  document.getElementById("review-section").classList.toggle("hidden", step < 2);
-  document.getElementById("publish-section").classList.toggle("hidden", step < 3);
+  $("upload-section").classList.toggle("hidden", step !== 1);
+  $("review-section").classList.toggle("hidden", step < 2);
+  $("publish-section").classList.toggle("hidden", step < 3);
   setStep(step);
 }
 
@@ -293,16 +393,93 @@ function setButtonLoading(btn, loading) {
 }
 
 function updateConnectionBadge() {
-  const config = loadConfig();
-  const badge = document.getElementById("connection-badge");
-  const connected = Boolean(config.token);
+  const connected = Boolean(loadConfig().token);
+  const badge = $("connection-badge");
   badge.textContent = connected ? "GitHub connected" : "Not connected";
   badge.classList.toggle("connected", connected);
+  badge.classList.toggle("clickable", !connected);
+  $("setup-banner").classList.toggle("hidden", connected);
+}
+
+function openSettingsPanel({ focusToken = false } = {}) {
+  const panel = $("settings-section");
+  panel.open = true;
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (focusToken) {
+    setTimeout(() => $("github-token").focus(), 300);
+  }
 }
 
 function updateCaptionCount() {
   const caption = document.getElementById("caption").value;
-  document.getElementById("caption-count").textContent = caption.length.toLocaleString();
+  const countEl = document.getElementById("caption-count");
+  const metaEl = countEl.closest(".field-meta");
+  const len = caption.length;
+  countEl.textContent = len.toLocaleString();
+  metaEl.classList.toggle("near-limit", len > 2000);
+  metaEl.classList.toggle("at-limit", len >= 2200);
+}
+
+function clearFieldErrors() {
+  document.querySelectorAll(".field-error").forEach((el) => el.classList.remove("field-error"));
+}
+
+function markFieldError(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.classList.add("field-error");
+    el.focus({ preventScroll: true });
+  }
+}
+
+function showPublishProgress(message) {
+  const el = document.getElementById("publish-progress");
+  el.classList.remove("hidden");
+  el.textContent = message;
+}
+
+function hidePublishProgress() {
+  const el = document.getElementById("publish-progress");
+  el.classList.add("hidden");
+  el.textContent = "";
+}
+
+function showSuccessActions() {
+  document.getElementById("success-actions").classList.remove("hidden");
+}
+
+function hideSuccessActions() {
+  document.getElementById("success-actions").classList.add("hidden");
+}
+
+function resetForm() {
+  draft = null;
+  sessionStorage.removeItem(SESSION_KEY);
+  clearFieldErrors();
+  clearMediaPreview();
+  hideSuccessActions();
+  hidePublishProgress();
+  hideStatus("upload-status");
+  hideStatus("review-status");
+  hideStatus("publish-status");
+
+  document.getElementById("title").value = "";
+  document.getElementById("caption").value = "";
+  document.getElementById("hashtags").value = "";
+  document.getElementById("event-name").value = "";
+  document.getElementById("publish-immediate").checked = true;
+  document.getElementById("publish-scheduled").checked = false;
+  document.getElementById("publish-at").value = "";
+  document.getElementById("dry-run").checked = true;
+  document.getElementById("media-file").value = "";
+  PLATFORMS.forEach((platform) => {
+    document.getElementById(`platform-${platform}`).checked = true;
+  });
+
+  updateCaptionCount();
+  toggleScheduleFields();
+  showStep(1);
+  document.getElementById("upload-section").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function saveDraft(draft) {
@@ -383,20 +560,44 @@ function escapeHtml(text) {
 }
 
 function validateDraftInput() {
+  clearFieldErrors();
   const title = document.getElementById("title").value.trim();
   const caption = document.getElementById("caption").value.trim();
   const fileInput = document.getElementById("media-file");
   const platforms = selectedPlatforms();
   const file = fileInput.files?.[0];
-  const schedule = readScheduleFromForm();
+  let schedule;
 
-  if (!title) throw new Error("Enter a title.");
-  if (!caption) throw new Error("Enter a caption.");
-  if (!file) throw new Error("Choose a photo or video to upload.");
-  if (platforms.length === 0) throw new Error("Select at least one platform.");
+  try {
+    schedule = readScheduleFromForm();
+  } catch (error) {
+    if (isScheduledMode()) {
+      markFieldError("publish-at");
+    }
+    throw error;
+  }
+
+  if (!title) {
+    markFieldError("title");
+    throw new Error("Enter a title.");
+  }
+  if (!caption) {
+    markFieldError("caption");
+    throw new Error("Enter a caption.");
+  }
+  if (!file) {
+    document.getElementById("dropzone").classList.add("field-error");
+    throw new Error("Choose a photo or video to upload.");
+  }
+  if (platforms.length === 0) {
+    throw new Error("Select at least one platform.");
+  }
   if (file.size > 25 * 1024 * 1024) {
+    document.getElementById("dropzone").classList.add("field-error");
     throw new Error("File is larger than 25 MB. Use a smaller file.");
   }
+
+  document.getElementById("dropzone").classList.remove("field-error");
 
   const id = `${slugify(title)}-${Date.now()}`;
   const ext = fileExtension(file);
@@ -453,13 +654,17 @@ function toggleScheduleFields() {
   updateStepNavLabel();
 }
 
-async function fetchScheduledPosts(config) {
+async function fetchScheduledPosts(config, { force = false } = {}) {
+  if (!force) {
+    const cached = loadScheduledCache(config);
+    if (cached) return cached;
+  }
+
+  const ref = encodeURIComponent(config.branch);
+  const base = repoApiBase(config);
   let contents;
   try {
-    contents = await api(
-      config,
-      `/repos/${config.owner}/${config.repo}/contents/content/posts?ref=${encodeURIComponent(config.branch)}`
-    );
+    contents = await api(config, `${base}/contents/content/posts?ref=${ref}`);
   } catch (error) {
     if (String(error.message).includes("404")) return [];
     throw error;
@@ -472,12 +677,7 @@ async function fetchScheduledPosts(config) {
   );
 
   const details = await Promise.all(
-    yamlEntries.map((entry) =>
-      api(
-        config,
-        `/repos/${config.owner}/${config.repo}/contents/${entry.path}?ref=${encodeURIComponent(config.branch)}`
-      )
-    )
+    yamlEntries.map((entry) => api(config, `${base}/contents/${entry.path}?ref=${ref}`))
   );
 
   const posts = [];
@@ -500,7 +700,9 @@ async function fetchScheduledPosts(config) {
     });
   }
 
-  return posts.sort((a, b) => a.due - b.due);
+  const sorted = posts.sort((a, b) => a.due - b.due);
+  saveScheduledCache(config, sorted);
+  return sorted;
 }
 
 function renderScheduledList(posts) {
@@ -534,10 +736,10 @@ function renderScheduledList(posts) {
     .join("");
 }
 
-async function refreshScheduledPosts() {
+async function refreshScheduledPosts({ force = false } = {}) {
   const config = getConfigFromForm();
-  const btn = document.getElementById("refresh-scheduled");
-  const empty = document.getElementById("scheduled-empty");
+  const btn = $("refresh-scheduled");
+  const empty = $("scheduled-empty");
   hideStatus("scheduled-status");
 
   if (!config.token) {
@@ -546,15 +748,23 @@ async function refreshScheduledPosts() {
     return;
   }
 
+  const cached = !force ? loadScheduledCache(config) : null;
+  if (cached) {
+    renderScheduledList(cached);
+    if (cached.length === 0) {
+      empty.textContent = "No upcoming scheduled posts.";
+    }
+    return;
+  }
+
   setButtonLoading(btn, true);
   try {
-    const posts = await fetchScheduledPosts(config);
+    const posts = await fetchScheduledPosts(config, { force });
     renderScheduledList(posts);
     if (posts.length === 0) {
       empty.textContent = "No upcoming scheduled posts.";
-    }
-    if (posts.length > 0) {
-      document.getElementById("scheduled-section").open = true;
+    } else {
+      $("scheduled-section").open = true;
       setStatus("scheduled-status", `${posts.length} upcoming post${posts.length === 1 ? "" : "s"} found.`, "ok");
     }
   } catch (error) {
@@ -575,9 +785,9 @@ function revokePreviewUrl() {
 }
 
 function showMediaPreview(file) {
-  const dropzone = document.getElementById("dropzone");
-  const empty = document.getElementById("dropzone-empty");
-  const preview = document.getElementById("upload-preview");
+  const dropzone = $("dropzone");
+  const empty = $("dropzone-empty");
+  const preview = $("upload-preview");
 
   revokePreviewUrl();
   previewUrl = URL.createObjectURL(file);
@@ -586,17 +796,12 @@ function showMediaPreview(file) {
   preview.classList.remove("hidden");
   dropzone.classList.add("has-file");
 
-  const meta = `<p class="hint">${escapeHtml(file.name)} · ${formatFileSize(file.size)} · <button class="link-btn" id="change-file-btn" type="button">Change file</button></p>`;
+  const meta = `<p class="hint">${escapeHtml(file.name)} · ${formatFileSize(file.size)} · <button class="link-btn change-file-btn" type="button">Change file</button></p>`;
   if (isVideoFile(file)) {
     preview.innerHTML = `${meta}<video controls src="${previewUrl}"></video>`;
   } else {
     preview.innerHTML = `${meta}<img src="${previewUrl}" alt="Selected media" />`;
   }
-
-  document.getElementById("change-file-btn").addEventListener("click", (event) => {
-    event.stopPropagation();
-    document.getElementById("media-file").click();
-  });
 }
 
 function clearMediaPreview() {
@@ -623,21 +828,62 @@ function assignMediaFile(file) {
   const dt = new DataTransfer();
   dt.items.add(file);
   input.files = dt.files;
+  document.getElementById("dropzone").classList.remove("field-error");
   showMediaPreview(file);
   updatePlatformsForMedia(file);
   hideStatus("upload-status");
 }
 
+$("open-settings-btn").addEventListener("click", () => openSettingsPanel({ focusToken: true }));
+
+$("connection-badge").addEventListener("click", () => {
+  if (!loadConfig().token) openSettingsPanel({ focusToken: true });
+});
+
+document.querySelectorAll(".step").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const target = Number(btn.dataset.step);
+    if (btn.disabled) return;
+    if (target === 1) {
+      hideStatus("review-status");
+      hideStatus("publish-status");
+      showStep(1);
+    } else if (target === 2 && draft) {
+      hideStatus("publish-status");
+      if (draft.file) {
+        revokePreviewUrl();
+        previewUrl = URL.createObjectURL(draft.file);
+      }
+      const config = getConfigFromForm();
+      renderPreview(
+        $("preview"),
+        draft,
+        previewUrl || `${rawMediaUrl(config, draft.mediaPath)}?t=${Date.now()}`
+      );
+      showStep(2);
+    } else if (target === 3 && draft?.saved) {
+      updatePublishStepUI();
+      showStep(3);
+    }
+  });
+});
+
+document.getElementById("new-post-btn").addEventListener("click", resetForm);
+
 document.getElementById("save-config").addEventListener("click", () => {
   const config = getConfigFromForm();
   if (!config.token) {
     setStatus("config-status", "GitHub token is required.", "error");
+    markFieldError("github-token");
     return;
   }
   saveConfig(config);
   updateConnectionBadge();
+  invalidateScheduledCache();
   setStatus("config-status", "Settings saved in this browser.", "ok");
-  refreshScheduledPosts();
+  if ($("scheduled-section").open) {
+    refreshScheduledPosts({ force: true });
+  }
 });
 
 document.getElementById("toggle-token").addEventListener("click", () => {
@@ -649,16 +895,27 @@ document.getElementById("toggle-token").addEventListener("click", () => {
   btn.setAttribute("aria-label", showing ? "Show token" : "Hide token");
 });
 
-document.getElementById("caption").addEventListener("input", updateCaptionCount);
+document.getElementById("caption").addEventListener("input", () => {
+  document.getElementById("caption").classList.remove("field-error");
+  updateCaptionCount();
+});
+
+document.getElementById("title").addEventListener("input", () => {
+  document.getElementById("title").classList.remove("field-error");
+});
+
+document.getElementById("publish-at").addEventListener("input", () => {
+  document.getElementById("publish-at").classList.remove("field-error");
+});
 
 document.querySelectorAll('input[name="publish-timing"]').forEach((input) => {
   input.addEventListener("change", toggleScheduleFields);
 });
 
-document.getElementById("refresh-scheduled").addEventListener("click", (event) => {
+$("refresh-scheduled").addEventListener("click", (event) => {
   event.preventDefault();
   event.stopPropagation();
-  refreshScheduledPosts();
+  refreshScheduledPosts({ force: true });
 });
 
 document.getElementById("browse-btn").addEventListener("click", (event) => {
@@ -666,17 +923,26 @@ document.getElementById("browse-btn").addEventListener("click", (event) => {
   document.getElementById("media-file").click();
 });
 
-document.getElementById("dropzone").addEventListener("click", (event) => {
-  if (event.target.closest("#browse-btn")) return;
-  if (!document.getElementById("dropzone").classList.contains("has-file")) {
-    document.getElementById("media-file").click();
+$("upload-preview").addEventListener("click", (event) => {
+  if (event.target.closest(".change-file-btn")) {
+    event.stopPropagation();
+    $("media-file").click();
+  }
+});
+
+$("dropzone").addEventListener("click", (event) => {
+  if (event.target.closest("#browse-btn, .change-file-btn")) return;
+  if (!$("dropzone").classList.contains("has-file")) {
+    $("media-file").click();
   }
 });
 
 document.getElementById("dropzone").addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    document.getElementById("media-file").click();
+    if (!$("dropzone").classList.contains("has-file")) {
+      $("media-file").click();
+    }
   }
 });
 
@@ -726,6 +992,10 @@ document.getElementById("review-btn").addEventListener("click", () => {
     setStatus("review-status", "Check everything looks correct, then save to GitHub.", "ok");
   } catch (error) {
     setStatus("upload-status", error.message, "error");
+    const firstError = document.querySelector(".field-error");
+    if (firstError) {
+      firstError.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 });
 
@@ -738,6 +1008,7 @@ document.getElementById("save-btn").addEventListener("click", async () => {
   const config = getConfigFromForm();
   if (!config.token) {
     setStatus("review-status", "Save your GitHub token in settings first.", "error");
+    openSettingsPanel({ focusToken: true });
     return;
   }
   if (!draft) {
@@ -751,12 +1022,7 @@ document.getElementById("save-btn").addEventListener("click", async () => {
 
   try {
     const mediaBase64 = await fileToBase64(draft.file);
-    await uploadFile(
-      config,
-      draft.mediaPath,
-      mediaBase64,
-      `content: upload media for ${draft.id}`
-    );
+    await uploadFile(config, draft.mediaPath, mediaBase64, `content: upload media for ${draft.id}`);
 
     const yaml = buildPostYaml(draft);
     await uploadFile(
@@ -767,10 +1033,12 @@ document.getElementById("save-btn").addEventListener("click", async () => {
     );
 
     draft.saved = true;
+    invalidateScheduledCache();
     saveDraft({ ...draft, fileName: draft.file.name, file: null });
 
     showStep(3);
     updatePublishStepUI();
+    hideSuccessActions();
     setStatus(
       "review-status",
       draft.publishAt
@@ -796,6 +1064,8 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
   const btn = document.getElementById("publish-btn");
   const scheduled = Boolean(draft.publishAt);
   setButtonLoading(btn, true);
+  hideSuccessActions();
+  hidePublishProgress();
   setStatus(
     "publish-status",
     dryRun
@@ -806,13 +1076,31 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
   );
 
   try {
-    const startedAt = new Date();
+    const startedAt = new Date(Date.now() - 5000);
     await dispatchWorkflow(config, {
       post_id: draft.id,
       dry_run: dryRun,
       publish: true,
     });
-    await waitForWorkflow(config, startedAt);
+    showPublishProgress("Workflow started on GitHub…");
+
+    const progressLink = (run) =>
+      run?.html_url
+        ? ` <a href="${run.html_url}" target="_blank" rel="noopener">View on GitHub</a>`
+        : "";
+
+    await waitForWorkflow(config, startedAt, (activeRun, attempt) => {
+      const elapsed = Math.round(
+        Array.from({ length: attempt + 1 }, (_, i) => pollDelay(i)).reduce((a, b) => a + b, 0) / 1000
+      );
+      if (activeRun.status === "in_progress" || activeRun.status === "queued") {
+        $("publish-progress").innerHTML =
+          `Running on GitHub (${elapsed}s)…${progressLink(activeRun)}`;
+        $("publish-progress").classList.remove("hidden");
+      }
+    });
+
+    hidePublishProgress();
     setStatus(
       "publish-status",
       dryRun
@@ -824,16 +1112,28 @@ document.getElementById("publish-btn").addEventListener("click", async () => {
           : "Published to your selected platforms.",
       "ok"
     );
-    if (!dryRun && scheduled) {
+
+    if (!dryRun) {
+      showSuccessActions();
       sessionStorage.removeItem(SESSION_KEY);
       draft = null;
-      refreshScheduledPosts();
-    } else if (!dryRun && !scheduled) {
-      sessionStorage.removeItem(SESSION_KEY);
-      draft = null;
+      updateStepButtons(3);
+      if (scheduled) {
+        refreshScheduledPosts({ force: true });
+      }
     }
   } catch (error) {
-    setStatus("publish-status", error.message, "error");
+    hidePublishProgress();
+    const linkMatch = String(error.message).match(/(https:\/\/github\.com\S+)/);
+    if (linkMatch) {
+      setStatus(
+        "publish-status",
+        `${error.message.replace(linkMatch[0], "").trim()} Open the workflow run on GitHub for details.`,
+        "error"
+      );
+    } else {
+      setStatus("publish-status", error.message, "error");
+    }
   } finally {
     setButtonLoading(btn, false);
   }
@@ -868,9 +1168,9 @@ window.addEventListener("DOMContentLoaded", () => {
       toggleScheduleFields();
     }
     renderPreview(
-      document.getElementById("preview"),
+      $("preview"),
       saved,
-      `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/${saved.mediaPath}?t=${Date.now()}`
+      `${rawMediaUrl(config, saved.mediaPath)}?t=${Date.now()}`
     );
     showStep(3);
     updatePublishStepUI();
@@ -884,7 +1184,15 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   toggleScheduleFields();
-  refreshScheduledPosts();
+
+  const scheduledPanel = $("scheduled-section");
+  scheduledPanel.addEventListener("toggle", () => {
+    if (scheduledPanel.open) refreshScheduledPosts();
+  });
+
+  if (!config.token) {
+    openSettingsPanel();
+  }
 
   if (window.CredentialsHealth) {
     CredentialsHealth.init({
@@ -893,6 +1201,9 @@ window.addEventListener("DOMContentLoaded", () => {
       authHeaders,
       sleep,
       setButtonLoading,
+      waitForDispatchedRun,
+      pollDelay,
+      repoApiBase,
     });
   }
 });

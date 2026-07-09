@@ -241,36 +241,39 @@
     return user.login || "connected";
   }
 
-  async function dispatchVerifyWorkflow(config) {
-    await deps.api(config, `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_VERIFY}/dispatches`, {
-      method: "POST",
-      body: JSON.stringify({ ref: config.branch }),
+  async function loadJsZip() {
+    if (window.JSZip) return window.JSZip;
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js";
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error("Could not load JSZip."));
+      document.head.appendChild(script);
     });
+    return window.JSZip;
+  }
+
+  async function dispatchVerifyWorkflow(config) {
+    await deps.api(
+      config,
+      `${deps.repoApiBase(config)}/actions/workflows/${WORKFLOW_VERIFY}/dispatches`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ref: config.branch }),
+      }
+    );
   }
 
   async function waitForVerifyWorkflow(config, startedAfter, onRunFound) {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      const data = await deps.api(
-        config,
-        `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_VERIFY}/runs?per_page=5`
-      );
-
-      const run = data.workflow_runs.find(
-        (entry) =>
-          entry.event === "workflow_dispatch" &&
-          new Date(entry.created_at) >= startedAfter
-      );
-
-      if (run) {
-        onRunFound?.(run);
-        if (run.status === "completed") {
-          return run;
-        }
-      }
-
-      await deps.sleep(3000);
-    }
-    throw new Error("Timed out waiting for credential check workflow.");
+    return deps.waitForDispatchedRun(
+      config,
+      WORKFLOW_VERIFY,
+      startedAfter,
+      onRunFound,
+      60,
+      "Credential check workflow"
+    );
   }
 
   async function downloadCredentialReport(config, runId) {
@@ -292,7 +295,8 @@
     }
 
     const buffer = await response.arrayBuffer();
-    const zip = await window.JSZip.loadAsync(buffer);
+    const JSZip = await loadJsZip();
+    const zip = await JSZip.loadAsync(buffer);
     const jsonFile = Object.values(zip.files).find((file) => file.name.endsWith(".json"));
     if (!jsonFile) {
       throw new Error("credential-health.json missing from workflow artifact.");
@@ -405,7 +409,7 @@
 
     root.querySelectorAll(".scroll-github-token").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const panel = document.querySelector(".settings");
+        const panel = document.getElementById("settings-section") || document.querySelector(".settings");
         panel.open = true;
         panel.scrollIntoView({ behavior: "smooth" });
         document.getElementById("github-token").focus();
@@ -493,7 +497,8 @@
 
     if (!config.token) {
       setCredentialsStatus("Save your GitHub token in GitHub connection first.", "error");
-      document.querySelector(".settings").open = true;
+      const panel = document.getElementById("settings-section") || document.querySelector(".settings");
+      panel.open = true;
       openCredentialsPanel();
       return;
     }
@@ -555,8 +560,9 @@
       }
     } catch (error) {
       const message = friendlyWorkflowError(error.message);
-      const runLink = error.runUrl
-        ? ` <a href="${escapeHtml(error.runUrl)}" target="_blank" rel="noopener">View failed run</a>`
+      const failedRunUrl = String(error.message).match(/(https:\/\/github\.com\S+)/)?.[1];
+      const runLink = failedRunUrl
+        ? ` <a href="${escapeHtml(failedRunUrl)}" target="_blank" rel="noopener">View failed run</a>`
         : ` <a href="${actionsUrl(config)}" target="_blank" rel="noopener">Open GitHub Actions</a>`;
       setCredentialsStatus(`${escapeHtml(message)}${runLink}`, "error", { html: true });
       openCredentialsPanel();

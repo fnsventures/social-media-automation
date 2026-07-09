@@ -121,6 +121,45 @@ header p {
   vertical-align: middle;
 }
 
+.connection-badge.clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.connection-badge.clickable:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Setup banner */
+
+.setup-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  background: #fff8e6;
+  border: 1px solid #f4d03f;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.setup-banner-title {
+  margin: 0 0 0.25rem;
+  font-weight: 700;
+  color: #8a6d1d;
+}
+
+.setup-banner-text {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #6b5a2a;
+  max-width: 36rem;
+}
+
 /* Layout */
 
 main {
@@ -178,6 +217,22 @@ main {
   font-weight: 600;
   color: var(--muted);
   transition: background var(--transition), color var(--transition);
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  cursor: default;
+}
+
+.step:not(:disabled) {
+  cursor: pointer;
+}
+
+.step:not(:disabled):hover {
+  background: #f0f4f2;
+}
+
+.step:disabled {
+  opacity: 0.55;
 }
 
 .step-connector {
@@ -190,6 +245,10 @@ main {
 .step.active {
   background: var(--green);
   color: white;
+}
+
+.step.active:hover {
+  background: var(--green-dark);
 }
 
 .step.done {
@@ -262,6 +321,25 @@ textarea {
   font-size: 0.8rem;
   color: var(--muted);
   text-align: right;
+}
+
+.field-meta.near-limit {
+  color: #b7791f;
+}
+
+.field-meta.at-limit {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.field-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.12) !important;
+}
+
+.dropzone.field-error {
+  border-color: var(--danger);
+  background: #fff5f5;
 }
 
 .row {
@@ -1152,6 +1230,25 @@ textarea {
   background: #eafaf1;
   color: var(--green-dark);
   border-left-color: var(--ok);
+}
+
+.publish-progress {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: #f8f9fa;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.publish-progress a {
+  color: var(--green-dark);
+  font-weight: 600;
+}
+
+.success-actions {
+  margin-top: 0.75rem;
 }
 
 /* Preview */
