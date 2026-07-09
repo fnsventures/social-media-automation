@@ -885,4 +885,14 @@ window.addEventListener("DOMContentLoaded", () => {
 
   toggleScheduleFields();
   refreshScheduledPosts();
+
+  if (window.CredentialsHealth) {
+    CredentialsHealth.init({
+      api,
+      getConfig: getConfigFromForm,
+      authHeaders,
+      sleep,
+      setButtonLoading,
+    });
+  }
 });

@@ -19,6 +19,10 @@ This guide walks you through uploading a photo or video and publishing it to Fac
 9. [Quick reference: where every credential lives](#quick-reference-where-every-credential-lives)
 10. [Getting help from workflow logs](#getting-help-from-workflow-logs)
 
+**Google Business social profile links:** [GOOGLE_BUSINESS_SOCIAL_LINKS.md](GOOGLE_BUSINESS_SOCIAL_LINKS.md) — link Facebook/Instagram on GBP, social media updates carousel, expired token recovery.
+
+**All token expiry / renewal:** [CREDENTIAL_RECOVERY.md](CREDENTIAL_RECOVERY.md) — `npm run verify` and `npm run verify:fix` for every platform.
+
 ---
 
 ## What this system does
@@ -331,16 +335,15 @@ Direct link to secrets (replace `<owner>` with your GitHub username or org):
 Use this checklist every time a credential expires:
 
 ```
-1. Identify the platform from the error log (see per-platform sections below)
-2. On a machine with Node.js 20+ and the repo cloned:
-      npm install
-      cp .env.example .env    # skip if .env already exists
-      # fill in existing values in .env
-3. Run the setup command for that platform (see table below)
-4. Run: npm run verify        # all affected platforms should show OK
+1. Run: npm run verify           # see which platform shows FAIL
+2. Run: npm run verify:fix       # optional — offers to run setup scripts automatically
+3. Or run the setup command manually (see table below)
+4. Run: npm run verify           # all affected platforms should show OK
 5. Update GitHub Secrets with the new values (see next section)
 6. Re-run the failed GitHub Actions workflow
 ```
+
+Quick reference for all tokens: **[CREDENTIAL_RECOVERY.md](CREDENTIAL_RECOVERY.md)**
 
 ### How to update GitHub Secrets
 
@@ -355,6 +358,10 @@ To add a secret that does not exist yet, click **New repository secret**, enter 
 
 ### Renewal commands and secrets to update
 
+Run **`npm run verify`** to check all platforms. Run **`npm run verify:fix`** to see fix steps and optionally run renewal scripts interactively.
+
+See **[CREDENTIAL_RECOVERY.md](CREDENTIAL_RECOVERY.md)** for the full quick-reference table.
+
 | Platform | Regenerate with | Update in `.env` | Update in GitHub Secrets |
 |----------|-----------------|------------------|--------------------------|
 | GitHub (Social Studio) | [Create new PAT](https://github.com/settings/tokens) | — | — (browser only) |
@@ -363,6 +370,9 @@ To add a secret that does not exist yet, click **New repository secret**, enter 
 | YouTube Community (image) | `npm run setup:youtube-cookies` | `YOUTUBE_CHANNEL_ID`, `YOUTUBE_COOKIES_JSON` | Same two names |
 | WhatsApp Status | `npm run setup:whatsapp` + export | `WHATSAPP_AUTH_B64`, `WHATSAPP_BUSINESS_NUMBER` | `WHATSAPP_AUTH_B64` (+ audience secrets if changed) |
 | Google Business | `npm run setup:google-business` | `GOOGLE_BUSINESS_CLIENT_ID`, `GOOGLE_BUSINESS_CLIENT_SECRET`, `GOOGLE_BUSINESS_REFRESH_TOKEN`, `GOOGLE_BUSINESS_LOCATION_NAME`, `GOOGLE_BUSINESS_MEDIA_BASE_URL` | Same five names |
+| Google Business social links | `npm run setup:google-business-social` | Uses same `GOOGLE_BUSINESS_*` secrets; optional URL overrides in `.env` only | Same five `GOOGLE_BUSINESS_*` names |
+
+See **[CREDENTIAL_RECOVERY.md](CREDENTIAL_RECOVERY.md)** for a one-page table of every token and `npm run verify:fix`.
 
 ### How long credentials last (typical)
 
@@ -769,6 +779,44 @@ Use the project number from the error message (e.g. `209187085216`) if you have 
 
 6. Re-run the publish workflow for the pending post.
 
+**How to fix (social profile links / Social media updates carousel)**
+
+If Instagram or Facebook posts are not appearing in the **Social media updates** section on Google Search/Maps, or you need to link profiles when the dashboard has no **Social profiles** field:
+
+1. Read the full guide: **[GOOGLE_BUSINESS_SOCIAL_LINKS.md](GOOGLE_BUSINESS_SOCIAL_LINKS.md)**
+
+2. Check current links (no changes):
+
+   ```bash
+   npm run check:google-business-social
+   ```
+
+3. Link or refresh profiles:
+
+   ```bash
+   npm run setup:google-business-social
+   ```
+
+4. If Google token expired:
+
+   ```bash
+   npm run setup:google-business-social -- --fix
+   ```
+
+   Choose **Yes** when asked to run `npm run setup:google-business`, then copy updated values to GitHub Secrets (table above).
+
+5. If Meta token expired but you only need to set URLs:
+
+   - Option A: `npm run setup:meta` then re-run social setup
+   - Option B: add to `.env` manually:
+
+     ```bash
+     GOOGLE_BUSINESS_FACEBOOK_URL=https://www.facebook.com/bishnupriyafuels
+     GOOGLE_BUSINESS_INSTAGRAM_URL=https://www.instagram.com/bishnupriyafuels
+     ```
+
+6. Wait 24–72 hours after linking for Google to refresh the carousel.
+
 **How to fix (image URL errors)**
 
 Google fetches images from a public URL. Ensure:
@@ -834,6 +882,7 @@ Common log patterns:
 | `401` / `403` on GitHub API | GitHub PAT issue | [GitHub PAT](#github-personal-access-token-pat--expired-or-rejected) |
 | Verify OK locally, FAIL in Actions | GitHub Secrets out of sync with `.env` | [Local vs CI mismatch](#local-verify-passes-but-github-actions-fails) |
 | Google media fetch failed | Image not public yet | [Google Business URL](#google-business-profile--refresh-token-invalid-or-api-access-issue) |
+| Social media updates missing / social links | Profiles not linked or token expired | [Social profile links](#how-to-fix-social-profile-links--social-media-updates-carousel) |
 
 After updating any secret in GitHub, **re-run the failed workflow** or click **Publish** again in Social Studio. You do not need to re-upload media if it was already saved.
 
