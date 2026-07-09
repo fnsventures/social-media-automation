@@ -66,6 +66,24 @@
       <div id="config-status" class="status hidden" role="status"></div>
     </details>
 
+    <details class="card credentials-panel" id="credentials-section">
+      <summary class="section-header">
+        <div class="credentials-title-wrap">
+          <h2>Credential health</h2>
+          <span id="credentials-health-badge" class="credentials-health-badge hidden" aria-hidden="true"></span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="credentials-check-btn" type="button">Check credentials</button>
+      </summary>
+      <p class="hint">
+        Verifies your GitHub token and all posting credentials. If something expired, follow the fix steps — copy a command, run it on your computer, update GitHub Secrets, then re-check.
+      </p>
+      <div id="credentials-progress" class="credentials-progress hidden" aria-live="polite"></div>
+      <div id="credentials-stats" class="credentials-stats hidden" aria-label="Credential summary"></div>
+      <p id="credentials-summary" class="credentials-summary">Connect GitHub in settings, then check credentials.</p>
+      <div id="credentials-results" class="credentials-results"></div>
+      <div id="credentials-status" class="status hidden" role="status"></div>
+    </details>
+
     <details class="card scheduled-panel" id="scheduled-section" open>
       <summary class="section-header">
         <h2>Upcoming scheduled posts</h2>
@@ -202,6 +220,8 @@
     <a href="https://bishnupriyafuels.fnsventures.in/">Bishnupriya Fuels</a>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
+  <script src="credentials.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

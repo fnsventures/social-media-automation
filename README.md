@@ -14,6 +14,7 @@ Built for [Bishnupriya Fuels](https://bishnupriyafuels.fnsventures.in/) (BPCL ou
 - **Image-to-video** — when only an image is provided and Community cookies are not set, YouTube gets an auto-generated 16:9 clip with Ken Burns motion, subtle color grading, and royalty-free background music (requires ffmpeg)
 - **YouTube Community** — image posts can go to the Community tab when cookies are configured
 - **Google Business** — image updates to your Business Profile listing via the official API
+- **Google Business social links** — link Facebook, Instagram, and BPCL profiles on GBP via API (when the dashboard Social profiles field is missing)
 
 ## How it works
 
@@ -64,6 +65,7 @@ Topics covered:
 - Renewing expired tokens for GitHub, Meta, YouTube, WhatsApp, and Google Business
 - Fixing **local verify OK but GitHub Actions fails** (secrets out of sync)
 - Reading GitHub Actions logs when something fails
+- **[Google Business social profile links](docs/GOOGLE_BUSINESS_SOCIAL_LINKS.md)** — link outlet + BPCL social accounts, social media updates carousel, token recovery
 
 ## Project structure
 
@@ -81,6 +83,7 @@ scripts/
   setup-youtube-oauth.js One-time YouTube OAuth setup
   setup-youtube-cookies.js One-time YouTube Community image post setup
   setup-google-business-oauth.js One-time Google Business Profile OAuth setup
+  setup-google-business-social.js Link social profiles on GBP (Facebook, Instagram, BPCL)
   setup-whatsapp.js     One-time WhatsApp Status QR setup
   lib/                  Platform clients and shared utilities
 .github/workflows/
@@ -171,6 +174,16 @@ npm run verify
 6. Run `npm run setup:google-business` — saves refresh token, location name, and media base URL
 7. Add the printed values to GitHub Secrets
 
+**Google Business social profile links** (Facebook, Instagram, BPCL on LinkedIn/YouTube/X):
+
+1. Complete the steps above (`npm run setup:google-business`)
+2. Optionally run `npm run setup:meta` so Facebook/Instagram URLs are auto-detected
+3. Set `GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL=true` in `.env` for BPCL corporate links on extra platforms
+4. Run `npm run setup:google-business-social` — interactive; use `--fix` if tokens expired
+5. Verify with `npm run check:google-business-social` or `npm run verify`
+
+Full guide: **[docs/GOOGLE_BUSINESS_SOCIAL_LINKS.md](docs/GOOGLE_BUSINESS_SOCIAL_LINKS.md)**
+
 Google fetches images by URL, so `GOOGLE_BUSINESS_MEDIA_BASE_URL` must point to where your `media/` files are publicly hosted (for example `https://raw.githubusercontent.com/owner/repo/master`). In GitHub Actions, the image must already be committed and pushed before publish runs.
 
 Copy the values printed at the end of each setup script into GitHub Secrets.
@@ -179,14 +192,25 @@ Copy the values printed at the end of each setup script into GitHub Secrets.
 
 Tokens and sessions expire over time. When publish or dry run fails:
 
-1. Identify the platform from the [workflow log patterns](docs/MEDIA_UPLOAD_GUIDE.md#getting-help-from-workflow-logs).
-2. Run the matching setup command locally (`npm run setup:meta`, `setup:youtube`, etc.).
-3. Run `npm run verify` to confirm the new credentials work.
-4. Copy the updated values from `.env` to **GitHub Repository Secrets** — Actions does not read your local `.env`.
+1. Run **`npm run verify`** to see which platform failed.
+2. Run **`npm run verify:fix`** to get copy-paste steps and optionally run renewal scripts automatically.
+3. Copy updated values from `.env` to **GitHub Repository Secrets** — Actions does not read your local `.env`.
+4. Run **`npm run verify`** again to confirm.
+
+| Platform | Renew with |
+|----------|------------|
+| Facebook + Instagram | `npm run setup:meta` |
+| YouTube | `npm run setup:youtube` |
+| YouTube Community | `npm run setup:youtube-cookies` |
+| WhatsApp Status | `npm run setup:whatsapp` → `npm run export:whatsapp-auth` |
+| Google Business | `npm run setup:google-business` |
+| Google Business social links | `npm run setup:google-business-social` |
+| Social Studio GitHub | New PAT in browser ([guide](docs/CREDENTIAL_RECOVERY.md)) |
 
 Full walkthrough with exact secret names and click-by-click GitHub instructions:
 
-**[docs/MEDIA_UPLOAD_GUIDE.md → Credential renewal overview](docs/MEDIA_UPLOAD_GUIDE.md#credential-renewal-overview)**
+- **[docs/CREDENTIAL_RECOVERY.md](docs/CREDENTIAL_RECOVERY.md)** — quick reference for all tokens  
+- **[docs/MEDIA_UPLOAD_GUIDE.md → Credential renewal overview](docs/MEDIA_UPLOAD_GUIDE.md#credential-renewal-overview)** — detailed steps per platform
 
 Common case: `npm run verify` passes locally but CI shows `invalid_grant` — your GitHub Secrets are stale; sync `YOUTUBE_REFRESH_TOKEN` (and matching client ID/secret) from `.env`.
 

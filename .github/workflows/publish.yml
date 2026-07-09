@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: studio
 
       - uses: actions/setup-node@v4
         with:
@@ -110,7 +112,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add content/posts/ media/
           git diff --staged --quiet || git commit -m "chore: archive published social posts"
-          git push
+          git push origin HEAD:studio
 
       - name: No pending posts
         if: steps.pending.outputs.found != 'true'
