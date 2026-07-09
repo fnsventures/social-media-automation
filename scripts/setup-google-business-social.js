@@ -1,22 +1,16 @@
 #!/usr/bin/env node
 /**
- * Link Facebook, Instagram, and YouTube profiles on Google Business Profile
- * via locations.updateAttributes (works when the dashboard has no Social profiles field).
+ * Link social profiles on Google Business Profile via locations.updateAttributes.
  *
- * Prerequisites:
- * - npm run setup:google-business (GOOGLE_BUSINESS_* credentials in .env)
- * - Meta credentials for Facebook/Instagram (META_PAGE_ACCESS_TOKEN, META_PAGE_ID, …)
+ * Commands:
+ *   npm run setup:google-business-social          # interactive link (default)
+ *   npm run setup:google-business-social -- --check   # verify only, no changes
+ *   npm run setup:google-business-social -- --fix     # offer to re-auth when tokens expire
+ *   npm run setup:google-business-social -- --yes     # skip confirmation prompt
  *
- * Optional overrides in .env:
- * - GOOGLE_BUSINESS_FACEBOOK_URL / GOOGLE_BUSINESS_INSTAGRAM_URL (your outlet pages)
- * - GOOGLE_BUSINESS_YOUTUBE_URL / GOOGLE_BUSINESS_LINKEDIN_URL / GOOGLE_BUSINESS_TWITTER_URL
- * - GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL=true — also set BPCL corporate links on free slots
- *   (LinkedIn, YouTube, X). Facebook and Instagram allow only one link each on GBP, so keep
- *   your outlet pages there for the social media updates carousel.
- *
- * Run: npm run setup:google-business-social
+ * See docs/GOOGLE_BUSINESS_SOCIAL_LINKS.md for the full guide.
  */
-import { loadEnvFile } from "./lib/load-env.js";
+import { loadEnvFile, upsertEnvValue } from "./lib/load-env.js";
 import { config } from "./lib/config.js";
 import {
   SOCIAL_URL_ATTRIBUTES,
@@ -24,10 +18,26 @@ import {
   updateLocationSocialLinks,
   verifyGoogleBusinessCredentials,
 } from "./lib/google-business.js";
+import {
+  offerGoogleBusinessFix,
+  offerMetaFix,
+  printGoogleBusinessRecovery,
+  printMetaRecovery,
+  wrapSetupError,
+} from "./lib/credential-recovery.js";
+import {
+  ask,
+  askYesNo,
+  parseSetupArgs,
+  printCopyBlock,
+  printHeading,
+  printStep,
+} from "./lib/setup-ui.js";
 
 loadEnvFile();
 
 const GRAPH = "https://graph.facebook.com/v21.0";
+const ARGS = parseSetupArgs();
 
 /** Official BPCL corporate profiles (bharatpetroleum.in). */
 const BPCL_OFFICIAL = {
@@ -38,17 +48,36 @@ const BPCL_OFFICIAL = {
   twitter: "https://www.twitter.com/bpclimited",
 };
 
+const HELP_TEXT = `
+Google Business — link social profiles
+
+Usage:
+  npm run setup:google-business-social [options]
+
+Options:
+  --check    Show current links and credentials only (no changes)
+  --fix      When a token is expired, offer to run the matching setup script
+  --yes, -y  Apply links without asking for confirmation
+  --help     Show this help
+
+Prerequisites:
+  npm run setup:google-business   (Google OAuth — required)
+  npm run setup:meta              (optional — auto-detects Facebook/Instagram URLs)
+
+Docs: docs/GOOGLE_BUSINESS_SOCIAL_LINKS.md
+`;
+
 function readEnv(name) {
   return (process.env[name] ?? "").trim();
 }
 
+function isTruthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+}
+
 function normalizeFacebookUrl(username, link) {
-  if (username) {
-    return `https://www.facebook.com/${username.replace(/^\/+/, "")}`;
-  }
-  if (link) {
-    return link.replace(/^http:\/\//, "https://").replace(/\/+$/, "");
-  }
+  if (username) return `https://www.facebook.com/${username.replace(/^\/+/, "")}`;
+  if (link) return link.replace(/^http:\/\//, "https://").replace(/\/+$/, "");
   return "";
 }
 
@@ -57,22 +86,12 @@ function normalizeInstagramUrl(username) {
   return `https://www.instagram.com/${username.replace(/^@/, "").replace(/^\/+/, "")}`;
 }
 
-function isTruthy(value) {
-  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
-}
-
 function normalizeYouTubeUrl(value) {
   if (!value) return "";
   const trimmed = value.trim();
-  if (trimmed.startsWith("http")) {
-    return trimmed.replace(/\/+$/, "");
-  }
-  if (trimmed.startsWith("@")) {
-    return `https://www.youtube.com/${trimmed}`;
-  }
-  if (trimmed.startsWith("UC")) {
-    return `https://www.youtube.com/channel/${trimmed}`;
-  }
+  if (trimmed.startsWith("http")) return trimmed.replace(/\/+$/, "");
+  if (trimmed.startsWith("@")) return `https://www.youtube.com/${trimmed}`;
+  if (trimmed.startsWith("UC")) return `https://www.youtube.com/channel/${trimmed}`;
   return `https://www.youtube.com/@${trimmed.replace(/^@/, "")}`;
 }
 
@@ -81,21 +100,31 @@ function normalizeGenericUrl(value) {
   return value.trim().replace(/^http:\/\//, "https://").replace(/\/+$/, "");
 }
 
+function formatAttributeLabel(attributeName) {
+  return attributeName.replace("attributes/url_", "").replace(/_/g, " ");
+}
+
+function printHelp() {
+  console.log(HELP_TEXT.trim());
+}
+
 async function fetchMetaSocialUrls() {
   const token = config.meta.pageAccessToken;
   const pageId = config.meta.pageId;
   const instagramId = config.meta.instagramAccountId;
 
   if (!token || !pageId) {
-    return { facebook: "", instagram: "" };
+    return { facebook: "", instagram: "", source: "none" };
   }
 
   const pageResponse = await fetch(
-    `${GRAPH}/${pageId}?fields=username,link&access_token=${encodeURIComponent(token)}`
+    `${GRAPH}/${pageId}?fields=username,link,name&access_token=${encodeURIComponent(token)}`
   );
   const page = await pageResponse.json();
   if (page.error) {
-    throw new Error(`Facebook API error: ${page.error.message}`);
+    const err = new Error(`Facebook API error: ${page.error.message}`);
+    err.metaError = page.error;
+    throw err;
   }
 
   let instagramUsername = "";
@@ -105,7 +134,9 @@ async function fetchMetaSocialUrls() {
     );
     const ig = await igResponse.json();
     if (ig.error) {
-      throw new Error(`Instagram API error: ${ig.error.message}`);
+      const err = new Error(`Instagram API error: ${ig.error.message}`);
+      err.metaError = ig.error;
+      throw err;
     }
     instagramUsername = ig.username ?? "";
   }
@@ -113,21 +144,42 @@ async function fetchMetaSocialUrls() {
   return {
     facebook: normalizeFacebookUrl(page.username, page.link),
     instagram: normalizeInstagramUrl(instagramUsername),
+    pageName: page.name,
+    source: "meta",
   };
 }
 
-async function resolveSocialUrls() {
+async function resolveSocialUrls(manualOverrides = {}) {
   const includeBpcl = isTruthy(readEnv("GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL"));
   const overrides = {
-    facebook: readEnv("GOOGLE_BUSINESS_FACEBOOK_URL"),
-    instagram: readEnv("GOOGLE_BUSINESS_INSTAGRAM_URL"),
+    facebook: manualOverrides.facebook || readEnv("GOOGLE_BUSINESS_FACEBOOK_URL"),
+    instagram: manualOverrides.instagram || readEnv("GOOGLE_BUSINESS_INSTAGRAM_URL"),
     youtube: readEnv("GOOGLE_BUSINESS_YOUTUBE_URL"),
     linkedin: readEnv("GOOGLE_BUSINESS_LINKEDIN_URL"),
     twitter: readEnv("GOOGLE_BUSINESS_TWITTER_URL"),
     pinterest: readEnv("GOOGLE_BUSINESS_PINTEREST_URL"),
   };
 
-  const fromMeta = await fetchMetaSocialUrls();
+  let fromMeta = { facebook: "", instagram: "", source: "none" };
+  try {
+    fromMeta = await fetchMetaSocialUrls();
+  } catch (error) {
+    const wrapped = wrapSetupError(error);
+    if (wrapped.type === "meta") {
+      const fixResult = await offerMetaFix({ fix: ARGS.fix, askYesNo, ask });
+      if (fixResult === "refreshed") {
+        fromMeta = await fetchMetaSocialUrls();
+      } else if (fixResult && typeof fixResult === "object") {
+        overrides.facebook = overrides.facebook || fixResult.facebook;
+        overrides.instagram = overrides.instagram || fixResult.instagram;
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
+
   const youtubeFromEnv =
     overrides.youtube ||
     (includeBpcl ? BPCL_OFFICIAL.youtube : "") ||
@@ -141,29 +193,16 @@ async function resolveSocialUrls() {
     linkedin: overrides.linkedin || (includeBpcl ? BPCL_OFFICIAL.linkedin : ""),
     twitter: overrides.twitter || (includeBpcl ? BPCL_OFFICIAL.twitter : ""),
     pinterest: overrides.pinterest,
+    metaPageName: fromMeta.pageName,
+    detectedFromMeta: fromMeta.source === "meta",
   };
 }
 
-function formatAttributeLabel(attributeName) {
-  return attributeName.replace("attributes/url_", "").replace(/_/g, " ");
-}
-
-async function main() {
-  const locationTitle = await verifyGoogleBusinessCredentials();
-  console.log(`Google Business connected to "${locationTitle}"\n`);
-
-  const urls = await resolveSocialUrls();
+function buildPlannedLinks(urls) {
   const planned = [];
-
-  if (urls.facebook) {
-    planned.push([SOCIAL_URL_ATTRIBUTES.facebook, urls.facebook]);
-  }
-  if (urls.instagram) {
-    planned.push([SOCIAL_URL_ATTRIBUTES.instagram, urls.instagram]);
-  }
-  if (urls.youtube) {
-    planned.push([SOCIAL_URL_ATTRIBUTES.youtube, urls.youtube]);
-  }
+  if (urls.facebook) planned.push([SOCIAL_URL_ATTRIBUTES.facebook, urls.facebook]);
+  if (urls.instagram) planned.push([SOCIAL_URL_ATTRIBUTES.instagram, urls.instagram]);
+  if (urls.youtube) planned.push([SOCIAL_URL_ATTRIBUTES.youtube, urls.youtube]);
   if (urls.linkedin) {
     planned.push([SOCIAL_URL_ATTRIBUTES.linkedin, normalizeGenericUrl(urls.linkedin)]);
   }
@@ -173,52 +212,176 @@ async function main() {
   if (urls.pinterest) {
     planned.push([SOCIAL_URL_ATTRIBUTES.pinterest, normalizeGenericUrl(urls.pinterest)]);
   }
+  return planned;
+}
+
+function saveDiscoveredUrls(urls) {
+  if (urls.facebook && !readEnv("GOOGLE_BUSINESS_FACEBOOK_URL")) {
+    upsertEnvValue("GOOGLE_BUSINESS_FACEBOOK_URL", urls.facebook);
+  }
+  if (urls.instagram && !readEnv("GOOGLE_BUSINESS_INSTAGRAM_URL")) {
+    upsertEnvValue("GOOGLE_BUSINESS_INSTAGRAM_URL", urls.instagram);
+  }
+}
+
+async function verifyGoogleAccess() {
+  try {
+    return await verifyGoogleBusinessCredentials();
+  } catch (error) {
+    const wrapped = wrapSetupError(error);
+    if (wrapped.type === "google_business") {
+      const fixed = await offerGoogleBusinessFix({ fix: ARGS.fix, askYesNo });
+      if (fixed) return verifyGoogleBusinessCredentials();
+      printGoogleBusinessRecovery({ apiDisabled: wrapped.apiDisabled });
+    }
+    throw error;
+  }
+}
+
+function printCredentialStatus() {
+  const checks = [
+    ["Google Business OAuth", Boolean(config.googleBusiness.refreshToken)],
+    ["Google location", Boolean(config.googleBusiness.locationName)],
+    ["Meta Page token (optional)", Boolean(config.meta.pageAccessToken)],
+    ["Meta Page ID (optional)", Boolean(config.meta.pageId)],
+    ["BPCL official links", isTruthy(readEnv("GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL"))],
+  ];
+  console.log("Credential checklist:\n");
+  for (const [label, ok] of checks) {
+    console.log(`  ${ok ? "✓" : "✗"} ${label}`);
+  }
+  console.log("");
+}
+
+async function printCurrentLinks() {
+  const saved = await getLocationSocialLinks();
+  const keys = Object.values(SOCIAL_URL_ATTRIBUTES);
+  console.log("Current links on Google Business Profile:\n");
+  let any = false;
+  for (const key of keys) {
+    if (saved[key]) {
+      any = true;
+      console.log(`  ${formatAttributeLabel(key)}: ${saved[key]}`);
+    }
+  }
+  if (!any) console.log("  (none set yet)\n");
+  else console.log("");
+}
+
+async function runCheckMode(locationTitle) {
+  printHeading("Check only — no changes made");
+  console.log(`  Location: ${locationTitle}\n`);
+  printCredentialStatus();
+  await printCurrentLinks();
+  console.log("To apply or update links, run without --check:\n");
+  printCopyBlock("Terminal", ["npm run setup:google-business-social"]);
+}
+
+async function main() {
+  if (ARGS.help) {
+    printHelp();
+    return;
+  }
+
+  printHeading("Google Business — social profile links");
+  console.log(
+    "  Links your Facebook, Instagram, and other profiles on Google Business Profile.\n" +
+      "  Works even when the dashboard has no Social profiles field.\n"
+  );
+
+  if (!config.googleBusiness.refreshToken) {
+    printGoogleBusinessRecovery();
+    throw new Error("GOOGLE_BUSINESS_REFRESH_TOKEN is missing. Run npm run setup:google-business first.");
+  }
+
+  const locationTitle = await verifyGoogleAccess();
+  console.log(`  Connected to: ${locationTitle}\n`);
+
+  if (ARGS.checkOnly) {
+    await runCheckMode(locationTitle);
+    return;
+  }
+
+  const urls = await resolveSocialUrls();
+  const planned = buildPlannedLinks(urls);
 
   if (planned.length === 0) {
+    printMetaRecovery();
     throw new Error(
-      "No social URLs found. Set Meta credentials in .env or add overrides:\n" +
-        "  GOOGLE_BUSINESS_FACEBOOK_URL\n" +
-        "  GOOGLE_BUSINESS_INSTAGRAM_URL\n" +
-        "  GOOGLE_BUSINESS_YOUTUBE_URL\n" +
-        "  GOOGLE_BUSINESS_LINKEDIN_URL\n" +
-        "  GOOGLE_BUSINESS_TWITTER_URL\n" +
-        "Or set GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL=true for BPCL corporate links."
+      "No social URLs to apply. Run npm run setup:meta or add GOOGLE_BUSINESS_FACEBOOK_URL / GOOGLE_BUSINESS_INSTAGRAM_URL to .env."
     );
   }
 
-  const includeBpcl = isTruthy(readEnv("GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL"));
-  if (includeBpcl) {
+  if (isTruthy(readEnv("GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL"))) {
     console.log(
-      "Note: GBP allows one Facebook and one Instagram link only.\n" +
-        "Keeping your outlet on those slots; BPCL official links go on LinkedIn / YouTube / X.\n" +
-        `BPCL Facebook (reference): ${BPCL_OFFICIAL.facebook}\n` +
-        `BPCL Instagram (reference): ${BPCL_OFFICIAL.instagram}\n`
+      "  BPCL mode: outlet on Facebook/Instagram; BPCL corporate on LinkedIn / YouTube / X.\n" +
+        `  BPCL Facebook (reference only): ${BPCL_OFFICIAL.facebook}\n` +
+        `  BPCL Instagram (reference only): ${BPCL_OFFICIAL.instagram}\n`
     );
   }
 
-  console.log("Will set these social profile links:\n");
+  if (urls.detectedFromMeta && urls.metaPageName) {
+    console.log(`  Detected from Meta: ${urls.metaPageName}\n`);
+  }
+
+  console.log("  Will set these links:\n");
   for (const [attributeName, uri] of planned) {
-    console.log(`  ${formatAttributeLabel(attributeName)}: ${uri}`);
+    console.log(`    ${formatAttributeLabel(attributeName)}: ${uri}`);
   }
   console.log("");
 
-  const payload = Object.fromEntries(planned);
-  await updateLocationSocialLinks(payload);
+  const current = await getLocationSocialLinks();
+  const changes = planned.filter(([name, uri]) => current[name] !== uri);
+  if (changes.length === 0) {
+    console.log("  All links already match — nothing to update.\n");
+    await printCurrentLinks();
+    printStep(1, "Social media updates may take 24–72 hours to appear on your listing.");
+    printStep(2, "Keep posting via Social Studio to feed the carousel.");
+    return;
+  }
+
+  if (!ARGS.yes) {
+    const proceed = await askYesNo("Apply these links to your Google Business Profile?");
+    if (!proceed) {
+      console.log("\n  Cancelled. No changes made.\n");
+      return;
+    }
+  }
+
+  saveDiscoveredUrls(urls);
+  await updateLocationSocialLinks(Object.fromEntries(planned));
 
   const saved = await getLocationSocialLinks();
-  console.log("Saved on Google Business Profile:\n");
+  printHeading("Done — saved on Google Business Profile");
   for (const [attributeName, uri] of planned) {
-    const current = saved[attributeName];
-    const status = current === uri ? "ok" : current ? "changed" : "missing";
-    console.log(`  [${status}] ${formatAttributeLabel(attributeName)}: ${current ?? "(not set)"}`);
+    const live = saved[attributeName];
+    const status = live === uri ? "ok" : live ? "check" : "missing";
+    console.log(`  [${status}] ${formatAttributeLabel(attributeName)}: ${live ?? "(not set)"}`);
   }
 
   console.log(
-    "\nSocial media updates may take 24–72 hours to appear on your public listing."
+    "\n  Next steps:\n" +
+      "  • Wait 24–72 hours for Social media updates to refresh on Google Search/Maps\n" +
+      "  • Post regularly via Social Studio (Facebook + Instagram feed the carousel)\n" +
+      "  • Run npm run setup:google-business-social -- --check anytime to verify links\n"
   );
+
+  if (urls.detectedFromMeta) {
+    console.log("  Saved detected URLs to .env (if not already set):\n");
+    if (urls.facebook) console.log(`    GOOGLE_BUSINESS_FACEBOOK_URL=${urls.facebook}`);
+    if (urls.instagram) console.log(`    GOOGLE_BUSINESS_INSTAGRAM_URL=${urls.instagram}`);
+    console.log("");
+  }
 }
 
 main().catch((error) => {
-  console.error("\nSetup failed:", error.message);
+  const wrapped = wrapSetupError(error);
+  if (wrapped.type === "google_business") {
+    if (!ARGS.fix) printGoogleBusinessRecovery({ apiDisabled: wrapped.apiDisabled });
+  } else if (wrapped.type === "meta") {
+    if (!ARGS.fix) printMetaRecovery();
+  } else {
+    console.error(`\n${wrapped.message}\n`);
+  }
   process.exit(1);
 });
