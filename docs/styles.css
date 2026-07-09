@@ -121,6 +121,45 @@ header p {
   vertical-align: middle;
 }
 
+.connection-badge.clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.connection-badge.clickable:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Setup banner */
+
+.setup-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  background: #fff8e6;
+  border: 1px solid #f4d03f;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.setup-banner-title {
+  margin: 0 0 0.25rem;
+  font-weight: 700;
+  color: #8a6d1d;
+}
+
+.setup-banner-text {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #6b5a2a;
+  max-width: 36rem;
+}
+
 /* Layout */
 
 main {
@@ -178,6 +217,22 @@ main {
   font-weight: 600;
   color: var(--muted);
   transition: background var(--transition), color var(--transition);
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  cursor: default;
+}
+
+.step:not(:disabled) {
+  cursor: pointer;
+}
+
+.step:not(:disabled):hover {
+  background: #f0f4f2;
+}
+
+.step:disabled {
+  opacity: 0.55;
 }
 
 .step-connector {
@@ -190,6 +245,10 @@ main {
 .step.active {
   background: var(--green);
   color: white;
+}
+
+.step.active:hover {
+  background: var(--green-dark);
 }
 
 .step.done {
@@ -262,6 +321,25 @@ textarea {
   font-size: 0.8rem;
   color: var(--muted);
   text-align: right;
+}
+
+.field-meta.near-limit {
+  color: #b7791f;
+}
+
+.field-meta.at-limit {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.field-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.12) !important;
+}
+
+.dropzone.field-error {
+  border-color: var(--danger);
+  background: #fff5f5;
 }
 
 .row {
@@ -646,6 +724,138 @@ textarea {
   vertical-align: middle;
 }
 
+.credentials-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.credentials-title-wrap h2 {
+  margin: 0;
+}
+
+.credentials-health-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.credentials-health-badge.ok {
+  background: var(--green-light);
+  color: var(--green-dark);
+}
+
+.credentials-health-badge.warn {
+  background: #fff8e6;
+  color: #b7791f;
+}
+
+.credentials-health-badge.fail {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.credentials-progress {
+  margin: 0.75rem 0 0;
+  padding: 0.85rem 1rem;
+  background: #f8f9fa;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.credential-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.credential-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.credential-step-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #dfe6e9;
+  flex-shrink: 0;
+}
+
+.credential-step.done {
+  color: var(--green-dark);
+}
+
+.credential-step.done .credential-step-dot {
+  background: var(--ok);
+}
+
+.credential-step.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.credential-step.active .credential-step-dot {
+  background: var(--yellow);
+  box-shadow: 0 0 0 3px rgba(244, 180, 0, 0.25);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.credential-progress-detail {
+  margin: 0.65rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.credential-progress-detail a {
+  color: var(--green-dark);
+}
+
+.credentials-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.credential-stat {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #f1f3f4;
+  color: var(--muted);
+}
+
+.credential-stat.ok {
+  background: var(--green-light);
+  color: var(--green-dark);
+}
+
+.credential-stat.fail {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.credential-stat.missing {
+  background: #fff8e6;
+  color: #b7791f;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
 .credentials-summary {
   margin: 0.75rem 0 0;
   font-weight: 600;
@@ -704,6 +914,70 @@ textarea {
 .credential-name {
   font-weight: 600;
   font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.credential-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.68rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.credential-card.ok .credential-icon {
+  background: rgba(14, 155, 76, 0.15);
+  color: var(--green-dark);
+}
+
+.credential-card.fail .credential-icon {
+  background: rgba(192, 57, 43, 0.12);
+  color: var(--danger);
+}
+
+.credential-card.skeleton {
+  min-height: 4.5rem;
+}
+
+.skeleton-line {
+  height: 0.7rem;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #eceff1 25%, #f5f6f7 50%, #eceff1 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  margin-bottom: 0.45rem;
+}
+
+.skeleton-line.wide {
+  width: 55%;
+}
+
+.skeleton-line:last-child {
+  width: 80%;
+  margin-bottom: 0;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.credential-fixes {
+  margin-top: 1rem;
+}
+
+#credentials-status a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
 .credential-badge {
@@ -956,6 +1230,25 @@ textarea {
   background: #eafaf1;
   color: var(--green-dark);
   border-left-color: var(--ok);
+}
+
+.publish-progress {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: #f8f9fa;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.publish-progress a {
+  color: var(--green-dark);
+  font-weight: 600;
+}
+
+.success-actions {
+  margin-top: 0.75rem;
 }
 
 /* Preview */

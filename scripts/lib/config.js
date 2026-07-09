@@ -33,7 +33,7 @@ function deriveGoogleBusinessMediaBaseUrl() {
   if (!repo) return "";
 
   const branch =
-    readEnv("GITHUB_REF_NAME") || readEnv("GITHUB_HEAD_REF") || "master";
+    readEnv("GITHUB_REF_NAME") || readEnv("GITHUB_HEAD_REF") || "studio";
   return `https://raw.githubusercontent.com/${repo}/${branch}`;
 }
 

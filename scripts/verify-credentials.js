@@ -100,6 +100,22 @@ async function collectCredentialCheck() {
         if (!failed.includes("instagram")) failed.push("instagram");
       }
     }
+  } else if (platformConfigured("instagram")) {
+    try {
+      const { pageAccessToken, instagramAccountId } = config.meta;
+      const account = await fetch(
+        `https://graph.facebook.com/v21.0/${instagramAccountId}?fields=username&access_token=${encodeURIComponent(pageAccessToken)}`
+      ).then((r) => r.json());
+      if (account.error) {
+        throw new Error(`Instagram token invalid: ${account.error.message}. Run npm run setup:meta.`);
+      }
+      results.instagram = "ok";
+      messages.instagram = `Connected as @${account.username}`;
+    } catch (error) {
+      results.instagram = "fail";
+      errors.instagram = error;
+      failed.push("instagram");
+    }
   }
 
   if (platformConfigured("whatsapp")) {
@@ -190,7 +206,8 @@ function printHumanReport(check) {
     if (state === "missing") printStatus(name, "MISSING");
     else if (state === "ok") printStatus(name, "OK");
     else if (state === "fail") printStatus(name, "FAIL");
-    else printStatus(name, "OK");
+    else if (state === "configured") printStatus(name, "INCOMPLETE");
+    else printStatus(name, String(state).toUpperCase());
   }
 }
 
