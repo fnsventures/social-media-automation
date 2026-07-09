@@ -35,6 +35,16 @@
     return user.login || "connected";
   }
 
+  function friendlyWorkflowError(message) {
+    if (message.includes("workflow_dispatch") || message.includes("422")) {
+      return `Credential check workflow is not available on branch "${deps.getConfig().branch}" yet. It was just added to studio — wait a minute and try again, or confirm Branch is set to studio in GitHub connection settings.`;
+    }
+    if (message.includes("404") || message.includes("Not Found")) {
+      return "The verify-credentials workflow was not found. Ensure Branch is set to studio and the latest code is deployed.";
+    }
+    return message;
+  }
+
   async function dispatchVerifyWorkflow(config) {
     await deps.api(config, `/repos/${config.owner}/${config.repo}/actions/workflows/${WORKFLOW_VERIFY}/dispatches`, {
       method: "POST",
@@ -308,10 +318,7 @@
         setCredentialsStatus("Some credentials failed. Follow the fix steps below.", "error");
       }
     } catch (error) {
-      const hint = String(error.message).includes("404") || String(error.message).includes("Not Found")
-        ? " The verify-credentials workflow may not be on your branch yet — merge the latest code or ensure Branch is set to studio in settings."
-        : "";
-      setCredentialsStatus(`${error.message}${hint}`, "error");
+      setCredentialsStatus(friendlyWorkflowError(error.message), "error");
     } finally {
       deps.setButtonLoading(btn, false);
     }
