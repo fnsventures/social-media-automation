@@ -68,12 +68,12 @@ Google allows **one link per platform**. For an authorised BPCL retail outlet:
 |----------|------------------|-----|
 | **Facebook** | Your outlet (`facebook.com/bishnupriyafuels`) | Feeds **your** posts into the social carousel |
 | **Instagram** | Your outlet (`instagram.com/bishnupriyafuels`) | Same — carousel already works here |
-| **YouTube** | BPCL official (`youtube.com/user/bpclbrand`) | Corporate channel |
-| **LinkedIn** | BPCL official (`linkedin.com/company/bpcl`) | Corporate |
-| **X (Twitter)** | BPCL official (`twitter.com/bpclimited`) | Corporate |
+| **YouTube** | BPCL official (`youtube.com/user/bpclbrand`) | Corporate channel (optional) |
+| **LinkedIn** | Omit unless you have an outlet page | BPCL corporate LinkedIn is not shown on local listings |
+| **X (Twitter)** | Omit unless you have an outlet page | BPCL corporate X is not shown on local listings |
 | **WhatsApp** | Your number (`wa.me/919668913299`) | Customer chat |
 
-Enable BPCL on extra slots in `.env`:
+Enable BPCL YouTube in `.env`:
 
 ```bash
 GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL=true
@@ -114,11 +114,9 @@ GOOGLE_BUSINESS_LOCATION_NAME=
 GOOGLE_BUSINESS_FACEBOOK_URL=https://www.facebook.com/bishnupriyafuels
 GOOGLE_BUSINESS_INSTAGRAM_URL=https://www.instagram.com/bishnupriyafuels
 
-# BPCL corporate on LinkedIn / YouTube / X
+# BPCL corporate on YouTube (one link per platform on GBP):
 GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL=true
-GOOGLE_BUSINESS_LINKEDIN_URL=https://www.linkedin.com/company/bpcl
 GOOGLE_BUSINESS_YOUTUBE_URL=https://www.youtube.com/user/bpclbrand
-GOOGLE_BUSINESS_TWITTER_URL=https://www.twitter.com/bpclimited
 ```
 
 **GitHub Secrets:** Social linking uses the same `GOOGLE_BUSINESS_*` secrets as posting. You do **not** need extra secrets for social links — only renew `GOOGLE_BUSINESS_REFRESH_TOKEN` when it expires.
