@@ -15,6 +15,7 @@ import { config } from "./lib/config.js";
 import {
   SOCIAL_URL_ATTRIBUTES,
   getLocationSocialLinks,
+  removeLocationSocialLinks,
   updateLocationSocialLinks,
   verifyGoogleBusinessCredentials,
 } from "./lib/google-business.js";
@@ -97,7 +98,11 @@ function normalizeYouTubeUrl(value) {
 
 function normalizeGenericUrl(value) {
   if (!value) return "";
-  return value.trim().replace(/^http:\/\//, "https://").replace(/\/+$/, "");
+  return value
+    .trim()
+    .replace(/^http:\/\//, "https://")
+    .replace(/^https:\/\/x\.com\//i, "https://www.twitter.com/")
+    .replace(/\/+$/, "");
 }
 
 function formatAttributeLabel(attributeName) {
@@ -190,8 +195,8 @@ async function resolveSocialUrls(manualOverrides = {}) {
     facebook: overrides.facebook || fromMeta.facebook,
     instagram: overrides.instagram || fromMeta.instagram,
     youtube: youtubeFromEnv,
-    linkedin: overrides.linkedin || (includeBpcl ? BPCL_OFFICIAL.linkedin : ""),
-    twitter: overrides.twitter || (includeBpcl ? BPCL_OFFICIAL.twitter : ""),
+    linkedin: overrides.linkedin,
+    twitter: overrides.twitter,
     pinterest: overrides.pinterest,
     metaPageName: fromMeta.pageName,
     detectedFromMeta: fromMeta.source === "meta",
@@ -320,7 +325,8 @@ async function main() {
 
   if (isTruthy(readEnv("GOOGLE_BUSINESS_INCLUDE_BPCL_OFFICIAL"))) {
     console.log(
-      "  BPCL mode: outlet on Facebook/Instagram; BPCL corporate on LinkedIn / YouTube / X.\n" +
+      "  BPCL mode: outlet on Facebook/Instagram; BPCL YouTube only.\n" +
+        "  LinkedIn and X are omitted unless set in GOOGLE_BUSINESS_LINKEDIN_URL / GOOGLE_BUSINESS_TWITTER_URL.\n" +
         `  BPCL Facebook (reference only): ${BPCL_OFFICIAL.facebook}\n` +
         `  BPCL Instagram (reference only): ${BPCL_OFFICIAL.instagram}\n`
     );
@@ -337,13 +343,24 @@ async function main() {
   console.log("");
 
   const current = await getLocationSocialLinks();
+  const plannedNames = new Set(planned.map(([name]) => name));
+  const removals = Object.keys(current).filter((name) => !plannedNames.has(name));
   const changes = planned.filter(([name, uri]) => current[name] !== uri);
-  if (changes.length === 0) {
+
+  if (changes.length === 0 && removals.length === 0) {
     console.log("  All links already match — nothing to update.\n");
     await printCurrentLinks();
     printStep(1, "Social media updates may take 24–72 hours to appear on your listing.");
     printStep(2, "Keep posting via Social Studio to feed the carousel.");
     return;
+  }
+
+  if (removals.length) {
+    console.log("  Will remove links no longer in your plan:\n");
+    for (const name of removals) {
+      console.log(`    ${formatAttributeLabel(name)}: ${current[name]}`);
+    }
+    console.log("");
   }
 
   if (!ARGS.yes) {
@@ -355,7 +372,12 @@ async function main() {
   }
 
   const savedEnvLines = saveDiscoveredUrls(urls);
-  await updateLocationSocialLinks(Object.fromEntries(planned));
+  if (removals.length) {
+    await removeLocationSocialLinks(removals);
+  }
+  if (planned.length) {
+    await updateLocationSocialLinks(Object.fromEntries(planned));
+  }
 
   const saved = await getLocationSocialLinks();
   printHeading("Done — saved on Google Business Profile");

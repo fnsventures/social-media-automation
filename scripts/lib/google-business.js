@@ -114,6 +114,29 @@ export async function updateLocationSocialLinks(links) {
   return response.data?.attributes ?? [];
 }
 
+/** Remove social link attributes (omit them from the attributes body, include in mask). */
+export async function removeLocationSocialLinks(attributeNames) {
+  const names = attributeNames.filter(Boolean);
+  if (names.length === 0) {
+    throw new Error("No social profile attributes provided to remove.");
+  }
+
+  const oauth2 = createOAuth2Client();
+  const locationId = getLocationId();
+
+  const response = await oauth2.request({
+    url: `${BUSINESS_INFO_BASE}/locations/${locationId}/attributes`,
+    method: "PATCH",
+    params: { attributeMask: names.join(",") },
+    data: {
+      name: `locations/${locationId}/attributes`,
+      attributes: [],
+    },
+  });
+
+  return response.data?.attributes ?? [];
+}
+
 export async function publishToGoogleBusiness(post) {
   const oauth2 = createOAuth2Client();
   const parent = normalizeLocationName(config.googleBusiness.locationName);

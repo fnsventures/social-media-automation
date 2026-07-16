@@ -210,8 +210,10 @@ async function waitForDispatchedRun(
   startedAfter,
   onProgress,
   maxAttempts = 90,
-  failureLabel = "Workflow"
+  failureLabel = "Workflow",
+  options = {}
 ) {
+  const { allowFailure = false } = options;
   const base = repoApiBase(config);
   let runId = null;
 
@@ -229,10 +231,10 @@ async function waitForDispatchedRun(
       runId = run.id;
       onProgress?.(run, attempt);
       if (run.status === "completed") {
-        if (run.conclusion !== "success") {
-          throw new Error(`${failureLabel} failed: ${run.html_url}`);
+        if (run.conclusion === "success" || (allowFailure && run.conclusion === "failure")) {
+          return run;
         }
-        return run;
+        throw new Error(`${failureLabel} failed: ${run.html_url}`);
       }
     }
 

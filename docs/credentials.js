@@ -266,13 +266,15 @@
   }
 
   async function waitForVerifyWorkflow(config, startedAfter, onRunFound) {
+    // Workflow exits 1 when credentials fail — still download the report with fix steps.
     return deps.waitForDispatchedRun(
       config,
       WORKFLOW_VERIFY,
       startedAfter,
       onRunFound,
       60,
-      "Credential check workflow"
+      "Credential check workflow",
+      { allowFailure: true }
     );
   }
 
@@ -312,14 +314,44 @@
     return "unknown";
   }
 
-  function renderPlatformCard(name, platform) {
+  function friendlyCredentialError(error) {
+    const text = String(error || "").trim();
+    if (!text) return "";
+    if (/invalid_grant/i.test(text)) {
+      return "OAuth refresh token expired or revoked (invalid_grant)";
+    }
+    if (/Error validating access token|code.?190/i.test(text)) {
+      return "Page access token expired or revoked";
+    }
+    if (/WHATSAPP_AUTH_B64 is set but invalid/i.test(text)) {
+      return "WhatsApp session archive is invalid — re-export auth";
+    }
+    return text;
+  }
+
+  function findRecoveryForPlatform(report, platformName) {
+    return (report.recovery || []).find(
+      (item) =>
+        item.id === platformName ||
+        (item.id === "meta" && (platformName === "facebook" || platformName === "instagram")) ||
+        (item.platforms || []).includes(platformName)
+    );
+  }
+
+  function renderPlatformCard(name, platform, recovery) {
     const label = platform?.label || PLATFORM_LABELS[name] || name;
     const status = platform?.status || "missing";
+    const message = platform?.message || "";
+    const errorText = friendlyCredentialError(platform?.error);
     const detail =
-      platform?.message ||
-      platform?.error ||
+      message ||
+      errorText ||
       (status === "missing" ? "Not configured in GitHub Secrets" : "");
     const icon = PLATFORM_ICONS[name] || "•";
+    const needsFix = status === "fail" || status === "missing";
+    const setupCmd = recovery?.setupNpm || "";
+    const showError = errorText && errorText !== detail;
+
     return `
       <article class="credential-card ${statusClass(status)}" data-platform="${name}">
         <div class="credential-card-head">
@@ -327,22 +359,32 @@
           <span class="credential-badge ${statusClass(status)}">${STATUS_LABELS[status] || status.toUpperCase()}</span>
         </div>
         ${detail ? `<p class="credential-detail">${escapeHtml(detail)}</p>` : ""}
+        ${showError ? `<p class="credential-error">${escapeHtml(errorText)}</p>` : ""}
+        ${
+          needsFix && setupCmd
+            ? `<div class="credential-card-fix">
+                <code class="credential-cmd">${escapeHtml(setupCmd)}</code>
+                <button class="btn btn-secondary btn-sm copy-cmd" type="button" data-copy="${escapeHtml(setupCmd)}">Copy</button>
+              </div>`
+            : ""
+        }
       </article>
     `;
   }
 
   function renderRecoveryPanel(recovery, config) {
+    const errorText = friendlyCredentialError(recovery.error);
     const steps = [
       recovery.setupNpm
-        ? `On your computer, run: <code>${escapeHtml(recovery.setupNpm)}</code>`
+        ? `On your computer (in this repo), run: <code>${escapeHtml(recovery.setupNpm)}</code>`
         : null,
       ...(recovery.extraSteps || []).map((step) =>
-        step.startsWith("npm ") ? `<code>${escapeHtml(step)}</code>` : escapeHtml(step)
+        step.startsWith("npm ") ? `Then run: <code>${escapeHtml(step)}</code>` : escapeHtml(step)
       ),
       recovery.apiDisabled
         ? "Enable Google My Business APIs in Google Cloud Console, wait 2–5 minutes, then re-run setup"
         : null,
-      "Copy the new values to GitHub Secrets (button below)",
+      "Copy the new values from the terminal into GitHub Secrets (button below)",
       'Click <strong>Re-check credentials</strong> here to confirm',
     ].filter(Boolean);
 
@@ -353,17 +395,20 @@
     return `
       <details class="credential-fix" open>
         <summary>Fix ${escapeHtml(recovery.label)}</summary>
-        ${recovery.error ? `<p class="credential-error">${escapeHtml(recovery.error)}</p>` : ""}
+        ${errorText ? `<p class="credential-error">${escapeHtml(errorText)}</p>` : ""}
+        ${
+          recovery.setupNpm
+            ? `<div class="credential-cmd-block">
+                <code>${escapeHtml(recovery.setupNpm)}</code>
+                <button class="btn btn-secondary btn-sm copy-cmd" type="button" data-copy="${escapeHtml(recovery.setupNpm)}">Copy command</button>
+              </div>`
+            : ""
+        }
         <ol class="fix-steps">
           ${steps.map((step) => `<li>${step}</li>`).join("")}
         </ol>
         ${secretTags ? `<p class="hint"><strong>GitHub Secrets to update:</strong><br>${secretTags}</p>` : ""}
         <div class="fix-actions">
-          ${
-            recovery.setupNpm
-              ? `<button class="btn btn-secondary btn-sm copy-cmd" type="button" data-copy="${escapeHtml(recovery.setupNpm)}">Copy setup command</button>`
-              : ""
-          }
           <button class="btn btn-secondary btn-sm copy-cmd" type="button" data-copy="npm run verify:fix">Copy verify:fix</button>
           <a class="btn btn-secondary btn-sm" href="${secretsUrl(config)}" target="_blank" rel="noopener">Open GitHub Secrets</a>
           <a class="btn btn-secondary btn-sm" href="${docsUrl(recovery.docPath || "docs/CREDENTIAL_RECOVERY.md")}" target="_blank" rel="noopener">Read guide</a>
@@ -423,7 +468,7 @@
     const btn = document.getElementById("credentials-check-btn");
 
     const platformCards = PLATFORM_ORDER.map((name) =>
-      renderPlatformCard(name, report.platforms?.[name])
+      renderPlatformCard(name, report.platforms?.[name], findRecoveryForPlatform(report, name))
     ).join("");
 
     const githubCard = `
@@ -439,6 +484,11 @@
     const recoveryHtml = (report.recovery || []).map((item) => renderRecoveryPanel(item, config)).join("");
     const githubFix = githubUser ? "" : renderGitHubPatFix();
     const hasIssues = !report.ok || !githubUser;
+    const fixesHeading =
+      (report.recovery || []).length > 0
+        ? `<h3 class="credential-fixes-heading">How to fix</h3>
+           <p class="hint">Run each command on your computer in this repo, then paste the new values into GitHub Secrets.</p>`
+        : "";
 
     const socialHtml =
       report.socialLinks?.length
@@ -477,7 +527,11 @@
       <div class="credential-grid">${githubCard}${platformCards}</div>
       ${warnings}
       ${socialHtml}
-      ${hasIssues ? `<div class="credential-fixes">${githubFix}${recoveryHtml}</div>` : ""}
+      ${
+        hasIssues
+          ? `<div class="credential-fixes">${fixesHeading}${githubFix}${recoveryHtml}</div>`
+          : ""
+      }
       <p class="hint credentials-checked-at">Last checked: ${escapeHtml(formatRelativeTime(report.checkedAt))}</p>
     `;
 
@@ -556,7 +610,13 @@
       if (report.ok) {
         setCredentialsStatus("All credentials OK. You can publish safely.", "ok");
       } else {
-        setCredentialsStatus("Some credentials failed — expand the fix steps below.", "error");
+        const fixCount = report.recovery?.length || 0;
+        setCredentialsStatus(
+          fixCount
+            ? `${fixCount} platform${fixCount === 1 ? "" : "s"} need a fix — copy the command on each card (or below), run it locally, update Secrets, then re-check.`
+            : "Some credentials failed — see details below.",
+          "error"
+        );
       }
     } catch (error) {
       const message = friendlyWorkflowError(error.message);
