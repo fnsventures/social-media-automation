@@ -28,7 +28,12 @@ function pollDelay(attempt) {
 }
 
 function loadConfig() {
-  const saved = JSON.parse(localStorage.getItem("sm-config") || "{}");
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem("sm-config") || "{}") || {};
+  } catch {
+    localStorage.removeItem("sm-config");
+  }
   const config = { ...DEFAULTS, ...saved };
   if (config.branch === "master") {
     config.branch = "studio";
@@ -70,11 +75,18 @@ function parseHashtags(value) {
 
 function fileExtension(file) {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".mp4") || name.endsWith(".mov") || file.type.startsWith("video/")) {
-    return ".mp4";
+  const fromName = name.match(/\.([a-z0-9]+)$/i)?.[1];
+  if (fromName === "mov" || fromName === "webm" || fromName === "mp4") {
+    return `.${fromName}`;
   }
-  if (name.endsWith(".png") || file.type === "image/png") return ".png";
-  if (name.endsWith(".webp") || file.type === "image/webp") return ".webp";
+  if (fromName === "png" || fromName === "webp" || fromName === "jpg" || fromName === "jpeg") {
+    return fromName === "jpeg" ? ".jpg" : `.${fromName}`;
+  }
+  if (file.type === "video/webm") return ".webm";
+  if (file.type === "video/quicktime") return ".mov";
+  if (file.type.startsWith("video/")) return ".mp4";
+  if (file.type === "image/png") return ".png";
+  if (file.type === "image/webp") return ".webp";
   return ".jpg";
 }
 
@@ -218,14 +230,25 @@ async function waitForDispatchedRun(
   let runId = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const run = runId
-      ? await api(config, `${base}/actions/runs/${runId}`)
-      : (await api(config, `${base}/actions/workflows/${workflowFile}/runs?per_page=5`))
-          .workflow_runs.find(
-            (entry) =>
-              entry.event === "workflow_dispatch" &&
-              new Date(entry.created_at) >= startedAfter
-          );
+    let run;
+    if (runId) {
+      run = await api(config, `${base}/actions/runs/${runId}`);
+    } else {
+      const listed = await api(
+        config,
+        `${base}/actions/workflows/${workflowFile}/runs?per_page=10`
+      );
+      // Prefer the oldest matching run after dispatch so concurrent publishes
+      // do not all attach to the newest workflow run.
+      const matches = (listed.workflow_runs ?? []).filter(
+        (entry) =>
+          entry.event === "workflow_dispatch" &&
+          new Date(entry.created_at) >= startedAfter
+      );
+      run = matches.sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+      )[0];
+    }
 
     if (run) {
       runId = run.id;
@@ -596,7 +619,9 @@ function validateDraftInput() {
   }
   if (file.size > 25 * 1024 * 1024) {
     document.getElementById("dropzone").classList.add("field-error");
-    throw new Error("File is larger than 25 MB. Use a smaller file.");
+    throw new Error(
+      "File is larger than 25 MB. Compress the media or use a shorter clip — GitHub uploads from Social Studio cannot exceed this limit."
+    );
   }
 
   document.getElementById("dropzone").classList.remove("field-error");

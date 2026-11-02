@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { approvePost, findPostById, isDue, markPostPublished, savePostResults } from "./lib/content.js";
+import { approvePost, applyPublishOutcome, findPostById, isDue } from "./lib/content.js";
 import { parseArgs } from "./lib/cli.js";
 import { platformConfigured } from "./lib/config.js";
 import { whatsappAuthArchiveValid } from "./lib/whatsapp-auth-archive.js";
@@ -100,20 +100,11 @@ async function main() {
   }
 
   const results = await publishPost(toPublish, args.dryRun);
-  const successes = results.filter((r) => r.ok && !r.dryRun);
-  const failures = results.filter((r) => !r.ok && !r.skipped);
-
-  if (!args.dryRun && successes.length > 0 && failures.length === 0) {
-    markPostPublished(toPublish.filePath, results);
-    console.log(`Marked ${toPublish.id} as published.`);
-  } else if (!args.dryRun && failures.length > 0) {
-    savePostResults(toPublish.filePath, results);
-    console.log(
-      `Post ${toPublish.id} remains pending (${failures.map((r) => r.platform).join(", ")} failed).`
-    );
-  }
-
-  if (failures.length > 0) process.exit(1);
+  const outcome = applyPublishOutcome(toPublish.filePath, toPublish.id, results, {
+    dryRun: args.dryRun,
+  });
+  console.log(outcome.message);
+  if (outcome.hadFailure) process.exit(1);
 }
 
 main().catch((error) => {

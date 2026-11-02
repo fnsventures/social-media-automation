@@ -52,7 +52,71 @@ export function loadPost(filePath) {
     videoPath,
     imageRelative: post.media?.image ?? null,
     videoRelative: post.media?.video ?? null,
+    previousResults: Array.isArray(post.results) ? post.results : [],
   };
+}
+
+/** True when a prior attempt already published this platform successfully. */
+export function priorSuccessForPlatform(previousResults, platform) {
+  return (previousResults ?? []).find(
+    (result) =>
+      result?.platform === platform &&
+      result.ok &&
+      !result.dryRun &&
+      !result.skipped
+  );
+}
+
+/**
+ * Decide whether a publish attempt should archive the post, keep it pending,
+ * or fail because nothing was actually attempted.
+ * @returns {{ hadFailure: boolean, archived: boolean, message: string }}
+ */
+export function applyPublishOutcome(filePath, postId, results, { dryRun = false } = {}) {
+  const successes = results.filter((r) => r.ok && !r.dryRun);
+  const failures = results.filter((r) => !r.ok && !r.skipped);
+  const skipped = results.filter((r) => r.skipped);
+  const attempted = results.filter((r) => !r.skipped);
+
+  if (dryRun) {
+    return {
+      hadFailure: failures.length > 0,
+      archived: false,
+      message: failures.length
+        ? `Dry run reported failures on ${failures.map((r) => r.platform).join(", ")}.`
+        : "Dry run completed.",
+    };
+  }
+
+  if (successes.length > 0 && failures.length === 0) {
+    markPostPublished(filePath, results);
+    return {
+      hadFailure: false,
+      archived: true,
+      message: `Marked ${postId} as published.`,
+    };
+  }
+
+  if (failures.length > 0) {
+    savePostResults(filePath, results);
+    return {
+      hadFailure: true,
+      archived: false,
+      message: `Post ${postId} remains pending (${failures.map((r) => r.platform).join(", ")} failed).`,
+    };
+  }
+
+  if (attempted.length === 0) {
+    savePostResults(filePath, results);
+    const skippedList = skipped.map((r) => r.platform).join(", ") || "none";
+    return {
+      hadFailure: true,
+      archived: false,
+      message: `Post ${postId} not published: all platforms were skipped (${skippedList}). Check credentials.`,
+    };
+  }
+
+  return { hadFailure: false, archived: false, message: `Post ${postId} publish finished.` };
 }
 
 export function loadPostsByStatus(status) {

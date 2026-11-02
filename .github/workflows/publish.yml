@@ -2,8 +2,9 @@ name: Publish Social Posts
 
 on:
   schedule:
-    # Every day at 6:00 AM IST (12:30 AM UTC)
+    # Twice daily: 6:00 AM IST (00:30 UTC) and 6:00 PM IST (12:30 UTC)
     - cron: "30 0 * * *"
+    - cron: "30 12 * * *"
   workflow_dispatch:
     inputs:
       post_id:
