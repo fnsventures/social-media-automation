@@ -3,9 +3,9 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "./lib/cli.js";
 import { config, platformConfigured } from "./lib/config.js";
 import {
+  applyPublishOutcome,
   loadPostsToPublish,
-  markPostPublished,
-  savePostResults,
+  priorSuccessForPlatform,
 } from "./lib/content.js";
 import { publishToFacebook, publishToInstagram } from "./lib/meta.js";
 import { publishToGoogleBusiness } from "./lib/google-business.js";
@@ -27,6 +27,12 @@ const META_PLATFORM_ORDER = ["instagram", "facebook"];
 async function publishToPlatform(platform, post, dryRun) {
   if (!PLATFORM_HANDLERS[platform]) {
     return { platform, ok: false, error: "Unsupported platform" };
+  }
+
+  const prior = priorSuccessForPlatform(post.previousResults, platform);
+  if (prior && !dryRun) {
+    console.log(`Skipping ${platform}: already published in a previous attempt.`);
+    return { ...prior, platform, ok: true, reused: true };
   }
 
   if (!platformConfigured(platform)) {
@@ -100,20 +106,11 @@ async function main() {
 
   for (const post of posts) {
     const results = await publishPost(post, args.dryRun);
-    const successes = results.filter((r) => r.ok && !r.dryRun);
-    const failures = results.filter((r) => !r.ok && !r.skipped);
-
-    if (!args.dryRun && successes.length > 0 && failures.length === 0) {
-      markPostPublished(post.filePath, results);
-      console.log(`Marked ${post.id} as published.`);
-    } else if (!args.dryRun && failures.length > 0) {
-      savePostResults(post.filePath, results);
-      console.log(
-        `Post ${post.id} remains pending (${failures.map((r) => r.platform).join(", ")} failed).`
-      );
-    }
-
-    if (failures.length > 0) hadFailure = true;
+    const outcome = applyPublishOutcome(post.filePath, post.id, results, {
+      dryRun: args.dryRun,
+    });
+    console.log(outcome.message);
+    if (outcome.hadFailure) hadFailure = true;
   }
 
   process.exit(hadFailure ? 1 : 0);
